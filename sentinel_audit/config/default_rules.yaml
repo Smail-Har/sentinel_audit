@@ -1,0 +1,224 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# SentinelAudit — Default Audit Rules
+# default_rules.yaml
+#
+# This file drives rule-based audit modules (sysctl, SSH, permissions…).
+# Each rule has: id, description, severity, expected_value, recommendation.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ─── Sysctl / Kernel hardening ───────────────────────────────────────────────
+
+sysctl_rules:
+
+  - id: SYSCTL-001
+    key: net.ipv4.ip_forward
+    description: "IP forwarding is enabled, allowing the host to act as a router."
+    expected_value: "0"
+    severity: MEDIUM
+    recommendation: >
+      Disable IP forwarding unless this host is intentionally acting as a
+      router or gateway: net.ipv4.ip_forward = 0
+
+  - id: SYSCTL-002
+    key: kernel.randomize_va_space
+    description: "ASLR (Address Space Layout Randomisation) is not fully enabled."
+    expected_value: "2"
+    severity: HIGH
+    recommendation: >
+      Enable full ASLR: kernel.randomize_va_space = 2
+
+  - id: SYSCTL-003
+    key: net.ipv4.conf.all.accept_redirects
+    description: "The kernel accepts ICMP redirect messages, which can be used in MITM attacks."
+    expected_value: "0"
+    severity: MEDIUM
+    recommendation: >
+      Disable ICMP redirects: net.ipv4.conf.all.accept_redirects = 0
+
+  - id: SYSCTL-004
+    key: net.ipv4.conf.all.send_redirects
+    description: "The kernel sends ICMP redirect messages."
+    expected_value: "0"
+    severity: LOW
+    recommendation: >
+      Disable sending ICMP redirects: net.ipv4.conf.all.send_redirects = 0
+
+  - id: SYSCTL-005
+    key: fs.protected_symlinks
+    description: "Symlink following protection is disabled."
+    expected_value: "1"
+    severity: MEDIUM
+    recommendation: >
+      Enable protected symlinks: fs.protected_symlinks = 1
+
+  - id: SYSCTL-006
+    key: fs.protected_hardlinks
+    description: "Hardlink protection is disabled."
+    expected_value: "1"
+    severity: MEDIUM
+    recommendation: >
+      Enable protected hardlinks: fs.protected_hardlinks = 1
+
+  - id: SYSCTL-007
+    key: net.ipv4.conf.all.rp_filter
+    description: "Reverse path filtering is not enabled — spoofed packets may be accepted."
+    expected_value: "1"
+    severity: MEDIUM
+    recommendation: >
+      Enable reverse path filter: net.ipv4.conf.all.rp_filter = 1
+
+  - id: SYSCTL-008
+    key: net.ipv4.icmp_echo_ignore_broadcasts
+    description: "The host responds to broadcast ICMP echo (Smurf attack vector)."
+    expected_value: "1"
+    severity: LOW
+    recommendation: >
+      Ignore broadcast ICMP: net.ipv4.icmp_echo_ignore_broadcasts = 1
+
+  - id: SYSCTL-009
+    key: kernel.dmesg_restrict
+    description: "Unprivileged users can read kernel log messages."
+    expected_value: "1"
+    severity: LOW
+    recommendation: >
+      Restrict dmesg to root: kernel.dmesg_restrict = 1
+
+  - id: SYSCTL-010
+    key: kernel.kptr_restrict
+    description: "Kernel pointer addresses are exposed in /proc."
+    expected_value: "2"
+    severity: MEDIUM
+    recommendation: >
+      Restrict kernel pointers: kernel.kptr_restrict = 2
+
+# ─── SSH configuration checks ────────────────────────────────────────────────
+
+ssh_rules:
+
+  - id: SSH-001
+    directive: PermitRootLogin
+    dangerous_values: ["yes"]
+    description: "Direct root login over SSH is permitted."
+    severity: CRITICAL
+    recommendation: >
+      Set PermitRootLogin to 'no' or 'prohibit-password' in /etc/ssh/sshd_config.
+
+  - id: SSH-002
+    directive: PasswordAuthentication
+    dangerous_values: ["yes"]
+    description: "Password-based SSH authentication is enabled (brute-force risk)."
+    severity: HIGH
+    recommendation: >
+      Disable password authentication and enforce key-based auth:
+      PasswordAuthentication no
+
+  - id: SSH-003
+    directive: X11Forwarding
+    dangerous_values: ["yes"]
+    description: "X11 forwarding is enabled, increasing the attack surface."
+    severity: MEDIUM
+    recommendation: >
+      Disable X11Forwarding: X11Forwarding no
+
+  - id: SSH-004
+    directive: MaxAuthTries
+    max_value: 3
+    description: "MaxAuthTries is set too high, facilitating brute-force attacks."
+    severity: MEDIUM
+    recommendation: >
+      Lower MaxAuthTries to 3 or fewer.
+
+  - id: SSH-005
+    directive: PermitEmptyPasswords
+    dangerous_values: ["yes"]
+    description: "SSH allows login with empty passwords."
+    severity: CRITICAL
+    recommendation: >
+      Disable empty password login: PermitEmptyPasswords no
+
+  - id: SSH-006
+    directive: Protocol
+    dangerous_values: ["1"]
+    description: "SSH Protocol 1 is insecure and deprecated."
+    severity: CRITICAL
+    recommendation: >
+      Use Protocol 2 only.
+
+  - id: SSH-007
+    directive: UsePAM
+    dangerous_values: ["no"]
+    description: "PAM is disabled, which may bypass centralised authentication policies."
+    severity: LOW
+    recommendation: >
+      Enable PAM: UsePAM yes
+
+# ─── File permission baseline ─────────────────────────────────────────────────
+
+file_permission_rules:
+
+  - id: PERM-001
+    path: /etc/passwd
+    expected_mode: "644"
+    description: "/etc/passwd has incorrect permissions."
+    severity: MEDIUM
+    recommendation: "chmod 644 /etc/passwd"
+
+  - id: PERM-002
+    path: /etc/shadow
+    expected_mode: "640"
+    description: "/etc/shadow has incorrect permissions (should be 640 or 000)."
+    severity: CRITICAL
+    recommendation: "chmod 640 /etc/shadow && chown root:shadow /etc/shadow"
+
+  - id: PERM-003
+    path: /etc/group
+    expected_mode: "644"
+    description: "/etc/group has incorrect permissions."
+    severity: MEDIUM
+    recommendation: "chmod 644 /etc/group"
+
+  - id: PERM-004
+    path: /etc/gshadow
+    expected_mode: "640"
+    description: "/etc/gshadow has incorrect permissions."
+    severity: HIGH
+    recommendation: "chmod 640 /etc/gshadow && chown root:shadow /etc/gshadow"
+
+  - id: PERM-005
+    path: /etc/sudoers
+    expected_mode: "440"
+    description: "/etc/sudoers has incorrect permissions."
+    severity: CRITICAL
+    recommendation: "chmod 440 /etc/sudoers"
+
+  - id: PERM-006
+    path: /etc/ssh/sshd_config
+    expected_mode: "600"
+    description: "/etc/ssh/sshd_config has incorrect permissions."
+    severity: HIGH
+    recommendation: "chmod 600 /etc/ssh/sshd_config && chown root:root /etc/ssh/sshd_config"
+
+# ─── Compliance baseline checks (CIS) ────────────────────────────────────────
+
+compliance_checks:
+
+  - id: CIS-1.1.1
+    title: "Ensure mounting of cramfs filesystems is disabled"
+    command: "modprobe -n -v cramfs 2>/dev/null"
+    pass_pattern: "install /bin/true"
+    severity: LOW
+    recommendation: "echo 'install cramfs /bin/true' >> /etc/modprobe.d/CIS.conf"
+
+  - id: CIS-1.1.2
+    title: "Ensure mounting of freevxfs filesystems is disabled"
+    command: "modprobe -n -v freevxfs 2>/dev/null"
+    pass_pattern: "install /bin/true"
+    severity: LOW
+    recommendation: "echo 'install freevxfs /bin/true' >> /etc/modprobe.d/CIS.conf"
+
+  - id: CIS-5.2.1
+    title: "Ensure permissions on /etc/ssh/sshd_config are configured (CIS)"
+    command: "stat -c '%a' /etc/ssh/sshd_config"
+    pass_pattern: "^600$"
+    severity: HIGH
+    recommendation: "chmod 600 /etc/ssh/sshd_config"
