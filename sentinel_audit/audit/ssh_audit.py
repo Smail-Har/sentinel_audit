@@ -1,82 +1,96 @@
 """
 sentinel_audit/audit/ssh_audit.py
 ───────────────────────────────────
-Analyse /etc/ssh/sshd_config against the rules defined in
-sentinel_audit/config/default_rules.yaml.
+Analyse /etc/ssh/sshd_config against rules from default_rules.yaml.
+All findings in English.
 """
 
 from __future__ import annotations
+
 import logging
+from pathlib import Path
+
+import yaml
+
 from sentinel_audit.audit.base import BaseAuditor
-from sentinel_audit.core.models import Severity
+from sentinel_audit.core.constants import Severity
 from sentinel_audit.core.utils import parse_sshd_config
 
 logger = logging.getLogger(__name__)
 
+_RULES_PATH = Path(__file__).parent.parent / "config" / "default_rules.yaml"
+
+# sshd defaults used when a directive is absent from the config file
+_SSHD_DEFAULTS: dict[str, str] = {
+    "PermitRootLogin": "prohibit-password",
+    "PasswordAuthentication": "yes",
+    "PubkeyAuthentication": "yes",
+    "X11Forwarding": "no",
+    "MaxAuthTries": "6",
+    "PermitEmptyPasswords": "no",
+    "UsePAM": "yes",
+    "Protocol": "2",
+}
+
+
 class SSHAuditor(BaseAuditor):
-    """Audit SSH hardening directives in ``/etc/ssh/sshd_config``."""
+    """Audit SSH hardening directives against YAML rules."""
 
     name = "SSH Audit"
     category = "ssh"
 
     def run(self) -> None:
-        """Evaluate SSH directives and register findings for insecure values."""
         r = self._read_file("/etc/ssh/sshd_config")
         if not r.ok:
             self._add_finding(
                 id="SSH-000",
-                title="Impossible de lire sshd_config",
-                description="Le fichier /etc/ssh/sshd_config n'est pas accessible.",
+                title="Cannot read sshd_config",
+                description="/etc/ssh/sshd_config is not accessible.",
                 severity=Severity.INFO,
                 evidence=r.stderr,
-                recommendation="Vérifiez les permissions du fichier.",
+                recommendation="Check file permissions or run audit with appropriate privileges.",
             )
             return
+
         config = parse_sshd_config(r.stdout)
-        # Security check: direct root login must be disabled to reduce brute-force impact.
-        val = config.get("PermitRootLogin", "yes")
-        if val.lower() == "yes":
-            self._add_finding(
-                id="SSH-001",
-                title="SSH: PermitRootLogin activé",
-                description="L'accès root SSH est autorisé.",
-                severity=Severity.CRITICAL,
-                evidence=f"PermitRootLogin {val}",
-                recommendation="Désactivez PermitRootLogin (no ou prohibit-password).",
-            )
-        # Security check: password auth increases brute-force surface.
-        val = config.get("PasswordAuthentication", "yes")
-        if val.lower() == "yes":
-            self._add_finding(
-                id="SSH-002",
-                title="SSH: PasswordAuthentication activé",
-                description="L'authentification par mot de passe SSH est activée.",
-                severity=Severity.HIGH,
-                evidence=f"PasswordAuthentication {val}",
-                recommendation="Désactivez PasswordAuthentication et utilisez les clés SSH.",
-            )
-        # Security check: public-key auth is required for stronger authentication.
-        val = config.get("PubkeyAuthentication", "no")
-        if val.lower() != "yes":
-            self._add_finding(
-                id="SSH-003",
-                title="SSH: PubkeyAuthentication désactivé",
-                description="L'authentification par clé publique SSH est désactivée.",
-                severity=Severity.MEDIUM,
-                evidence=f"PubkeyAuthentication {val}",
-                recommendation="Activez PubkeyAuthentication yes.",
-            )
-        # Security check: too many auth attempts facilitate credential stuffing.
-        val = config.get("MaxAuthTries", "6")
+        rules = self._load_ssh_rules()
+
+        for rule in rules:
+            directive = rule["directive"]
+            actual = config.get(directive, _SSHD_DEFAULTS.get(directive, ""))
+
+            # Check dangerous_values (exact match)
+            if "dangerous_values" in rule:
+                if actual.lower() in [v.lower() for v in rule["dangerous_values"]]:
+                    self._add_finding(
+                        id=rule["id"],
+                        title=f"SSH: {directive} set to insecure value",
+                        description=rule["description"],
+                        severity=Severity(rule["severity"]),
+                        evidence=f"{directive} {actual}",
+                        recommendation=rule["recommendation"],
+                    )
+
+            # Check max_value (integer comparison)
+            if "max_value" in rule:
+                try:
+                    if int(actual) > rule["max_value"]:
+                        self._add_finding(
+                            id=rule["id"],
+                            title=f"SSH: {directive} too high ({actual})",
+                            description=rule["description"],
+                            severity=Severity(rule["severity"]),
+                            evidence=f"{directive} {actual}",
+                            recommendation=rule["recommendation"],
+                        )
+                except (ValueError, TypeError):
+                    pass
+
+    def _load_ssh_rules(self) -> list[dict[str, object]]:
         try:
-            if int(val) > 3:
-                self._add_finding(
-                    id="SSH-004",
-                    title="SSH: MaxAuthTries trop élevé",
-                    description="MaxAuthTries autorise trop d'essais d'authentification.",
-                    severity=Severity.MEDIUM,
-                    evidence=f"MaxAuthTries {val}",
-                    recommendation="Réduisez MaxAuthTries à 3 ou moins.",
-                )
-        except Exception:
-            pass
+            with open(_RULES_PATH, encoding="utf-8") as fh:
+                data = yaml.safe_load(fh)
+            return data.get("ssh_rules", [])  # type: ignore[no-any-return]
+        except Exception as exc:  # noqa: BLE001
+            self._record_error(f"Cannot load SSH rules: {exc}")
+            return []

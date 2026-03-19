@@ -11,43 +11,21 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any
 
-
-_SEVERITY_RANK = {
-    "INFO": 0,
-    "LOW": 1,
-    "MEDIUM": 2,
-    "HIGH": 3,
-    "CRITICAL": 4,
-}
+from sentinel_audit.core.constants import Severity
 
 
-# ──────────────────────────────────────────────
-# Severity levels
-# ──────────────────────────────────────────────
-
-class Severity(str, Enum):
-    """Finding severity levels, ordered from lowest to highest impact."""
-
-    INFO = "INFO"
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-    CRITICAL = "CRITICAL"
-
-    def __lt__(self, other: "Severity") -> bool:  # type: ignore[override]
-        return _SEVERITY_RANK[self.value] < _SEVERITY_RANK[other.value]
-
-    def __le__(self, other: "Severity") -> bool:  # type: ignore[override]
-        return _SEVERITY_RANK[self.value] <= _SEVERITY_RANK[other.value]
-
-    def __gt__(self, other: "Severity") -> bool:  # type: ignore[override]
-        return _SEVERITY_RANK[self.value] > _SEVERITY_RANK[other.value]
-
-    def __ge__(self, other: "Severity") -> bool:  # type: ignore[override]
-        return _SEVERITY_RANK[self.value] >= _SEVERITY_RANK[other.value]
+# Re-export so existing imports keep working
+__all__ = [
+    "Severity",
+    "Finding",
+    "CommandResult",
+    "SystemInfo",
+    "SecurityScore",
+    "AuditResult",
+    "InventoryTarget",
+]
 
 
 # ──────────────────────────────────────────────
@@ -56,16 +34,19 @@ class Severity(str, Enum):
 
 @dataclass
 class Finding:
-    """A single security / configuration finding produced by an audit module."""
+    """A single security finding produced by an audit module.
+
+    Findings represent *real security issues* — not inventory items.
+    """
 
     id: str
     """Unique identifier, e.g. ``SSH-001``."""
 
     title: str
-    """Short human-readable title."""
+    """Short human-readable title (English)."""
 
     description: str
-    """Full explanation of the issue."""
+    """Full explanation of the issue (English)."""
 
     severity: Severity
     """Impact level."""
@@ -74,10 +55,10 @@ class Finding:
     """Audit category, e.g. ``ssh``, ``permissions``, ``users``."""
 
     evidence: str = ""
-    """Raw evidence collected from the system (command output, file snippet…)."""
+    """Raw evidence collected from the system (sanitised — no secrets)."""
 
     recommendation: str = ""
-    """Concrete remediation advice."""
+    """Concrete remediation command or advice (English)."""
 
     reference: str = ""
     """Optional URL to CIS benchmark / CVE / upstream docs."""
@@ -121,7 +102,7 @@ class CommandResult:
 
 
 # ──────────────────────────────────────────────
-# System inventory
+# System inventory (informational, not scored)
 # ──────────────────────────────────────────────
 
 @dataclass
@@ -131,7 +112,7 @@ class SystemInfo:
     hostname: str = "unknown"
     os_name: str = "unknown"
     os_version: str = "unknown"
-    os_id: str = "unknown"          # e.g. ubuntu, debian, rhel
+    os_id: str = "unknown"
     kernel_version: str = "unknown"
     architecture: str = "unknown"
     uptime: str = "unknown"
@@ -140,6 +121,14 @@ class SystemInfo:
     total_memory_mb: int = 0
     disk_usage: list[dict[str, str]] = field(default_factory=list)
     network_interfaces: list[dict[str, str]] = field(default_factory=list)
+    installed_packages_count: int = 0
+    upgradable_packages: list[str] = field(default_factory=list)
+    running_services: list[str] = field(default_factory=list)
+    enabled_services: list[str] = field(default_factory=list)
+    listening_ports: list[dict[str, str]] = field(default_factory=list)
+    user_accounts: list[dict[str, str]] = field(default_factory=list)
+    cron_jobs: list[str] = field(default_factory=list)
+    containers: list[dict[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -155,6 +144,14 @@ class SystemInfo:
             "total_memory_mb": self.total_memory_mb,
             "disk_usage": self.disk_usage,
             "network_interfaces": self.network_interfaces,
+            "installed_packages_count": self.installed_packages_count,
+            "upgradable_packages": self.upgradable_packages,
+            "running_services": self.running_services,
+            "enabled_services": self.enabled_services,
+            "listening_ports": self.listening_ports,
+            "user_accounts": self.user_accounts,
+            "cron_jobs": self.cron_jobs,
+            "containers": self.containers,
         }
 
 
@@ -167,20 +164,11 @@ class SecurityScore:
     """Aggregated security score for the target system."""
 
     raw_score: float = 100.0
-    """Score before capping, may go below 0 in heavily-penalised systems."""
-
     score: int = 100
-    """Final score clamped to [0, 100]."""
-
     grade: str = "A"
-    """Letter grade derived from the final score."""
-
     risk_summary: str = "Very low risk posture"
-    """Human-readable risk summary derived from score and findings."""
-
     total_findings: int = 0
     breakdown: dict[str, int] = field(default_factory=dict)
-    """Count of findings per severity level."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -201,30 +189,25 @@ class AuditResult:
     """Container for the complete result of one audit run."""
 
     target: str
-    """Host that was audited (hostname, IP, or ``localhost``)."""
-
-    started_at: datetime.datetime = field(default_factory=datetime.datetime.utcnow)
+    label: str = ""
+    started_at: datetime.datetime = field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
     finished_at: datetime.datetime | None = None
 
     system_info: SystemInfo = field(default_factory=SystemInfo)
     findings: list[Finding] = field(default_factory=list)
     score: SecurityScore = field(default_factory=SecurityScore)
-
-    # Warnings or non-fatal errors produced during the audit
     audit_errors: list[str] = field(default_factory=list)
 
-    # ── helpers ──────────────────────────────
-
     def add_finding(self, finding: Finding) -> None:
-        """Append a finding and keep the list sorted by descending severity."""
+        """Append a finding."""
         self.findings.append(finding)
 
     def findings_by_severity(self, severity: Severity) -> list[Finding]:
-        """Return all findings matching *severity*."""
         return [f for f in self.findings if f.severity == severity]
 
     def findings_by_category(self, category: str) -> list[Finding]:
-        """Return all findings matching *category*."""
         return [f for f in self.findings if f.category == category]
 
     @property
@@ -236,6 +219,7 @@ class AuditResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "target": self.target,
+            "label": self.label,
             "started_at": self.started_at.isoformat(),
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
             "duration_seconds": self.duration_seconds,
@@ -244,3 +228,21 @@ class AuditResult:
             "findings": [f.to_dict() for f in self.findings],
             "audit_errors": self.audit_errors,
         }
+
+
+# ──────────────────────────────────────────────
+# Inventory target (from YAML inventory file)
+# ──────────────────────────────────────────────
+
+@dataclass
+class InventoryTarget:
+    """A single target parsed from the inventory YAML file."""
+
+    host: str
+    label: str = ""
+    ssh_user: str = "root"
+    ssh_key: str | None = None
+    ssh_password: str | None = None
+    ssh_port: int = 22
+    modules: list[str] = field(default_factory=list)
+    exclude_modules: list[str] = field(default_factory=list)

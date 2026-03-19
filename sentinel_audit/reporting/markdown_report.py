@@ -1,41 +1,69 @@
-"""Markdown report generator for SentinelAudit (GitHub friendly)."""
+"""Markdown report generator for SentinelAudit."""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
-from sentinel_audit.core.models import AuditResult, Severity
+from sentinel_audit.core.constants import Severity
+from sentinel_audit.core.models import AuditResult
+from sentinel_audit.reporting.base import (
+    collect_recommendations,
+    findings_grouped_by_category,
+    top_priority_findings,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class MarkdownReportGenerator:
-    """Generate a GitHub-readable Markdown report."""
+    """Generate a professional Markdown report."""
 
     def generate(self, result: AuditResult, output_path: str | None = None) -> str:
         lines: list[str] = []
 
-        lines.append(f"# SentinelAudit Report — {result.target}")
+        lines.append(f"# SentinelAudit Report — {result.label or result.target}")
         lines.append("")
-        lines.append("## Summary")
+        lines.append("> **Confidential** — This report contains security assessment data.")
         lines.append("")
+
+        # Executive summary
+        lines.append("## Executive Summary")
+        lines.append("")
+        lines.append(f"- **Target:** {result.target}")
         lines.append(f"- **Score:** {result.score.score}/100 ({result.score.grade})")
         lines.append(f"- **Risk:** {result.score.risk_summary}")
         lines.append(f"- **Total findings:** {len(result.findings)}")
+        if result.duration_seconds is not None:
+            lines.append(f"- **Audit duration:** {result.duration_seconds:.1f}s")
         lines.append("")
 
+        # Top priority actions
+        top = top_priority_findings(result)
+        if top:
+            lines.append("## Top Priority Actions")
+            lines.append("")
+            for i, f in enumerate(top, 1):
+                lines.append(f"{i}. **[{f.severity.value}]** {f.title} — {f.recommendation}")
+            lines.append("")
+
+        # System information
         lines.append("## System Information")
         lines.append("")
-        lines.append(f"- **Hostname:** {result.system_info.hostname}")
-        lines.append(f"- **OS:** {result.system_info.os_name} {result.system_info.os_version}")
-        lines.append(f"- **Kernel:** {result.system_info.kernel_version}")
-        lines.append(f"- **Uptime:** {result.system_info.uptime}")
-
-        ip_addresses = [item.get("address", "") for item in result.system_info.network_interfaces if item.get("address")]
+        si = result.system_info
+        lines.append(f"- **Hostname:** {si.hostname}")
+        lines.append(f"- **OS:** {si.os_name} {si.os_version}")
+        lines.append(f"- **Kernel:** {si.kernel_version}")
+        lines.append(f"- **Architecture:** {si.architecture}")
+        lines.append(f"- **Uptime:** {si.uptime}")
+        lines.append(f"- **CPU:** {si.cpu_model} ({si.cpu_count} cores)")
+        lines.append(f"- **Memory:** {si.total_memory_mb} MB")
+        ip_addresses = [item.get("address", "") for item in si.network_interfaces if item.get("address")]
         lines.append(f"- **IP addresses:** {', '.join(ip_addresses) if ip_addresses else 'N/A'}")
+        lines.append(f"- **Installed packages:** {si.installed_packages_count}")
         lines.append("")
 
+        # Findings by severity
         lines.append("## Findings by Severity")
         lines.append("")
         lines.append("| Severity | Count |")
@@ -44,29 +72,44 @@ class MarkdownReportGenerator:
             lines.append(f"| {severity.value} | {result.score.breakdown.get(severity.value, 0)} |")
         lines.append("")
 
-        lines.append("## Findings")
+        # Detailed findings by category
+        lines.append("## Detailed Findings")
         lines.append("")
-        if not result.findings:
+        grouped = findings_grouped_by_category(result)
+        if not grouped:
             lines.append("No findings detected.")
             lines.append("")
         else:
-            for finding in result.findings:
-                lines.append(f"### [{finding.severity.value}] {finding.title} ({finding.id})")
+            for category, findings in grouped.items():
+                lines.append(f"### {category.replace('_', ' ').title()}")
                 lines.append("")
-                lines.append(f"- **Description:** {finding.description}")
-                lines.append(f"- **Evidence:** `{finding.evidence or 'N/A'}`")
-                lines.append(f"- **Recommendation:** {finding.recommendation or 'N/A'}")
-                lines.append(f"- **Category:** {finding.category}")
-                lines.append("")
+                for finding in findings:
+                    lines.append(f"#### [{finding.severity.value}] {finding.title} ({finding.id})")
+                    lines.append("")
+                    lines.append(f"- **Description:** {finding.description}")
+                    if finding.evidence:
+                        lines.append(f"- **Evidence:** `{finding.evidence}`")
+                    if finding.recommendation:
+                        lines.append(f"- **Recommendation:** {finding.recommendation}")
+                    if finding.reference:
+                        lines.append(f"- **Reference:** {finding.reference}")
+                    lines.append("")
 
+        # Recommendations
         lines.append("## Recommendations")
         lines.append("")
-        recommendations = self._collect_recommendations(result)
+        recommendations = collect_recommendations(result)
         if recommendations:
-            for rec in recommendations:
-                lines.append(f"- {rec}")
+            for i, rec in enumerate(recommendations, 1):
+                lines.append(f"{i}. {rec}")
         else:
             lines.append("- No specific recommendation.")
+        lines.append("")
+
+        # Footer
+        lines.append("---")
+        lines.append(f"*Generated by SentinelAudit v1.0.0 — {result.started_at.strftime('%Y-%m-%d %H:%M UTC')}*")
+        lines.append("*This report is confidential.*")
         lines.append("")
 
         markdown = "\n".join(lines)
@@ -77,14 +120,3 @@ class MarkdownReportGenerator:
             logger.info("Markdown report written to %s", path)
 
         return markdown
-
-    @staticmethod
-    def _collect_recommendations(result: AuditResult) -> list[str]:
-        seen: set[str] = set()
-        recommendations: list[str] = []
-        for finding in result.findings:
-            rec = finding.recommendation.strip()
-            if rec and rec not in seen:
-                seen.add(rec)
-                recommendations.append(rec)
-        return recommendations

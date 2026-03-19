@@ -1,73 +1,138 @@
 """
 sentinel_audit/audit/users_audit.py
 ─────────────────────────────────────
-Check for UID 0 accounts, sudoers, active shells, NOPASSWD sudo, etc.
+Check for UID 0 accounts, NOPASSWD sudo, password-less accounts.
+Inventory (user list, sudo members) goes to SystemInfo — not as findings.
 """
 
 from __future__ import annotations
+
 import logging
+
 from sentinel_audit.audit.base import BaseAuditor
-from sentinel_audit.core.models import Severity
+from sentinel_audit.core.constants import Severity
 
 logger = logging.getLogger(__name__)
 
+# Shells that indicate a non-interactive (service) account
+_NOLOGIN_SHELLS = frozenset({
+    "/usr/sbin/nologin", "/bin/false", "/sbin/nologin", "/bin/nologin",
+})
+
+
 class UsersAuditor(BaseAuditor):
-    """Audit user accounts, privilege groups and interactive shells."""
+    """Audit user accounts and privilege configurations."""
 
     name = "Users Audit"
     category = "users"
 
     def run(self) -> None:
-        """Check risky identity and privilege configurations."""
+        self._check_uid0_accounts()
+        self._check_nopasswd_sudo()
+        self._check_empty_passwords()
+        self._collect_user_inventory()
 
-        # Security check: only root should have UID 0.
+    def _check_uid0_accounts(self) -> None:
+        """Only root should have UID 0."""
         r = self._read_file("/etc/passwd")
-        if r.ok:
-            uid0_accounts: list[str] = []
-            active_shell_accounts: list[tuple[str, str]] = []
-            for line in r.stdout.splitlines():
-                parts = line.split(":")
-                if len(parts) > 2 and parts[2] == "0":
-                    uid0_accounts.append(parts[0])
+        if not r.ok:
+            self._record_error("Cannot read /etc/passwd")
+            return
 
-                if len(parts) > 6 and parts[6] not in ("/usr/sbin/nologin", "/bin/false"):
-                    active_shell_accounts.append((parts[0], line))
-
-            for account in uid0_accounts:
-                if account == "root":
-                    continue
+        for line in r.stdout.splitlines():
+            parts = line.split(":")
+            if len(parts) > 2 and parts[2] == "0" and parts[0] != "root":
                 self._add_finding(
                     id="USR-001",
-                    title=f"Compte UID 0: {account}",
-                    description="Plusieurs comptes UID 0 sont un risque de sécurité.",
+                    title=f"Non-root account with UID 0: {parts[0]}",
+                    description=(
+                        f"Account '{parts[0]}' has UID 0, giving it full root "
+                        f"privileges. Only the root account should have UID 0."
+                    ),
                     severity=Severity.CRITICAL,
-                    evidence=account,
-                    recommendation="Seul root doit avoir UID 0.",
+                    evidence=f"{parts[0]}:x:0:...",
+                    recommendation=f"Remove or change the UID of account '{parts[0]}'.",
                 )
 
-            # Security check: interactive shells should be limited to trusted user accounts.
-            for account, passwd_line in active_shell_accounts:
+    def _check_nopasswd_sudo(self) -> None:
+        """Detect NOPASSWD entries in sudoers."""
+        r = self._run_command("grep -r 'NOPASSWD' /etc/sudoers /etc/sudoers.d/ 2>&1 || true")
+        if self._is_permission_denied(r):
+            self._add_finding(
+                id="USR-002",
+                title="Cannot check sudoers — insufficient privileges",
+                description="Cannot read /etc/sudoers. NOPASSWD entries could not be verified.",
+                severity=Severity.INFO,
+                evidence="Permission denied reading /etc/sudoers",
+                recommendation="Re-run audit as root to check sudoers configuration.",
+            )
+            return
+        if r.ok and r.stdout.strip():
+            lines = [
+                ln for ln in r.stdout.splitlines()
+                if "NOPASSWD" in ln and not ln.strip().startswith("#")
+            ]
+            if lines:
+                self._add_finding(
+                    id="USR-002",
+                    title="NOPASSWD sudo entries detected",
+                    description=(
+                        "One or more sudoers entries allow command execution "
+                        "without password confirmation, reducing accountability."
+                    ),
+                    severity=Severity.HIGH,
+                    evidence="\n".join(lines[:5]),
+                    recommendation=(
+                        "Remove NOPASSWD from sudoers entries unless strictly "
+                        "required for automated processes."
+                    ),
+                )
+
+    def _check_empty_passwords(self) -> None:
+        """Detect accounts with empty password fields in /etc/shadow."""
+        r = self._run_command("awk -F: '($2 == \"\" ) {print $1}' /etc/shadow 2>&1")
+        if self._is_permission_denied(r):
+            self._add_finding(
+                id="USR-003",
+                title="Cannot check empty passwords — insufficient privileges",
+                description="/etc/shadow is not readable. Cannot verify empty password accounts.",
+                severity=Severity.INFO,
+                evidence="Permission denied reading /etc/shadow",
+                recommendation="Re-run audit as root or grant read access to /etc/shadow.",
+            )
+            return
+        if r.ok and r.stdout.strip():
+            accounts = [a.strip() for a in r.stdout.splitlines() if a.strip()]
+            if accounts:
                 self._add_finding(
                     id="USR-003",
-                    title=f"Compte shell actif: {account}",
-                    description="Ce compte possède un shell interactif.",
-                    severity=Severity.MEDIUM,
-                    evidence=passwd_line,
-                    recommendation="Désactiver le shell pour les comptes système/services.",
+                    title="Accounts with empty passwords",
+                    description=(
+                        f"The following accounts have no password set: "
+                        f"{', '.join(accounts)}. Anyone can log in without credentials."
+                    ),
+                    severity=Severity.CRITICAL,
+                    evidence=f"Empty password accounts: {', '.join(accounts)}",
+                    recommendation="Set passwords or lock these accounts: passwd -l <user>",
                 )
 
-        # Security check: sudo group members have privileged command execution rights.
-        r = self._run_command("getent group sudo")
-        if r.ok and ":" in r.stdout:
-            users = r.stdout.strip().split(":")[-1].split(",")
-            for user in users:
-                user = user.strip()
-                if user:
-                    self._add_finding(
-                        id="USR-002",
-                        title=f"Membre du groupe sudo: {user}",
-                        description="Ce compte peut utiliser sudo.",
-                        severity=Severity.HIGH,
-                        evidence=user,
-                        recommendation="Limiter les membres du groupe sudo.",
-                    )
+    def _collect_user_inventory(self) -> None:
+        """Populate SystemInfo with user account inventory (not findings)."""
+        r = self._read_file("/etc/passwd")
+        if not r.ok:
+            return
+
+        for line in r.stdout.splitlines():
+            parts = line.split(":")
+            if len(parts) < 7:
+                continue
+            username = parts[0]
+            uid = parts[2]
+            shell = parts[6]
+            is_interactive = shell not in _NOLOGIN_SHELLS
+            self.result.system_info.user_accounts.append({
+                "username": username,
+                "uid": uid,
+                "shell": shell,
+                "interactive": str(is_interactive),
+            })

@@ -1,0 +1,32 @@
+# ==============================================================================
+# SentinelAudit — Example Inventory File
+# ==============================================================================
+# This file defines the targets to audit and their SSH connection parameters.
+# Place it next to your sentinel-audit command and run:
+#   sentinel-audit audit --inventory inventory.yaml --output reports/
+
+defaults:
+  ssh_user: auditor
+  ssh_key: ~/.ssh/id_ed25519
+  ssh_port: 22
+
+targets:
+  # ── Production servers ──
+  - host: 192.168.1.10
+    label: Web Server (Production)
+
+  - host: 192.168.1.20
+    label: Database Server (Production)
+    ssh_user: admin
+    exclude_modules: [container]        # No Docker on this server
+
+  # ── Staging ──
+  - host: 192.168.2.10
+    label: Staging App Server
+    modules: [ssh, firewall, users, permissions, services, packages]
+
+  # ── CI/CD ──
+  - host: 10.0.0.50
+    label: CI/CD Runner
+    ssh_port: 2222
+    ssh_key: ~/.ssh/ci_key

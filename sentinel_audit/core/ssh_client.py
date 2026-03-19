@@ -1,44 +1,48 @@
 """
 sentinel_audit/core/ssh_client.py
 ──────────────────────────────────
-Thin Paramiko wrapper that provides an authenticated SSH session to a
-remote host and exposes a single :meth:`exec` method used by
-:class:`~sentinel_audit.core.executor.RemoteExecutor`.
+Thin Paramiko wrapper providing an authenticated SSH session.
+
+Security:
+- Uses RejectPolicy by default — unknown hosts are **rejected**.
+- Loads system and user known_hosts files.
+- Supports explicit known_hosts path via constructor.
+- Password auth triggers a CLI warning (visible in logs).
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 from typing import Optional
 
-from sentinel_audit.core.exceptions import AuthenticationError
-from sentinel_audit.core.exceptions import ConnectionError as SAConnectionError
+from sentinel_audit.core.constants import DEFAULT_SSH_CONNECT_TIMEOUT
+from sentinel_audit.core.exceptions import (
+    AuthenticationError,
+    ConnectionError as SAConnectionError,
+    HostKeyVerificationError,
+)
 from sentinel_audit.core.models import CommandResult
 
 logger = logging.getLogger(__name__)
 
+# Well-known known_hosts locations
+_SYSTEM_KNOWN_HOSTS = "/etc/ssh/ssh_known_hosts"
+_USER_KNOWN_HOSTS = os.path.expanduser("~/.ssh/known_hosts")
+
 
 class SSHClient:
-    """
-    Authenticated SSH session to a remote Linux host.
+    """Authenticated SSH session to a remote Linux host.
 
-    Parameters
-    ----------
-    host:
-        Hostname or IP address of the target.
-    username:
-        Remote user.
-    port:
-        SSH port (default 22).
-    key_path:
-        Path to an unencrypted PEM private key file.  Expanded with
-        :func:`os.path.expanduser` so ``~/.ssh/id_rsa`` works.
-    password:
-        Plaintext password (used only when *key_path* is not set).
-    connect_timeout:
-        TCP connection timeout in seconds.
+    Args:
+        host: Hostname or IP address of the target.
+        username: Remote user.
+        port: SSH port (default 22).
+        key_path: Path to a PEM private key file.
+        password: Plaintext password (avoid — key-based auth preferred).
+        connect_timeout: TCP connection timeout in seconds.
+        known_hosts_path: Explicit path to a known_hosts file.
+            If None, the system and user defaults are loaded.
     """
 
     def __init__(
@@ -48,39 +52,73 @@ class SSHClient:
         port: int = 22,
         key_path: Optional[str] = None,
         password: Optional[str] = None,
-        connect_timeout: int = 15,
+        passphrase: Optional[str] = None,
+        connect_timeout: int = DEFAULT_SSH_CONNECT_TIMEOUT,
+        known_hosts_path: Optional[str] = None,
     ) -> None:
         self.host = host
         self.username = username
         self.port = port
         self.key_path = os.path.expanduser(key_path) if key_path else None
         self.password = password
+        self.passphrase = passphrase
         self.connect_timeout = connect_timeout
-        self._client: Optional[object] = None   # paramiko.SSHClient
+        self.known_hosts_path = known_hosts_path
+        self._client: Optional[object] = None
 
     # ── connection lifecycle ──────────────────
 
     def connect(self) -> None:
         """Open and authenticate the SSH connection.
 
-        Raises
-        ------
-        sentinel_audit.core.exceptions.ConnectionError
-            If the TCP connection fails.
-        sentinel_audit.core.exceptions.AuthenticationError
-            If authentication fails.
+        Raises:
+            HostKeyVerificationError: If the host key is not in known_hosts.
+            AuthenticationError: If authentication fails.
+            ConnectionError: If the TCP connection fails.
         """
         try:
-            import paramiko  # local import – optional dependency
+            import paramiko
         except ImportError as exc:
             raise SAConnectionError(
                 "paramiko is not installed. Run: pip install paramiko"
             ) from exc
 
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if self.password:
+            logger.warning(
+                "Password authentication is used for %s@%s. "
+                "Key-based auth is strongly recommended.",
+                self.username,
+                self.host,
+            )
 
-        connect_kwargs: dict = {
+        client = paramiko.SSHClient()
+
+        # SECURITY: Reject unknown host keys by default
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+
+        # Load known_hosts files
+        if self.known_hosts_path:
+            try:
+                client.load_host_keys(self.known_hosts_path)
+            except (OSError, paramiko.SSHException) as exc:
+                raise HostKeyVerificationError(
+                    f"Cannot load known_hosts from {self.known_hosts_path}: {exc}"
+                ) from exc
+        else:
+            # Load system-wide and user known_hosts
+            if os.path.isfile(_SYSTEM_KNOWN_HOSTS):
+                try:
+                    client.load_system_host_keys(_SYSTEM_KNOWN_HOSTS)
+                except (OSError, paramiko.SSHException):
+                    logger.debug("Could not load system known_hosts: %s", _SYSTEM_KNOWN_HOSTS)
+
+            if os.path.isfile(_USER_KNOWN_HOSTS):
+                try:
+                    client.load_host_keys(_USER_KNOWN_HOSTS)
+                except (OSError, paramiko.SSHException):
+                    logger.debug("Could not load user known_hosts: %s", _USER_KNOWN_HOSTS)
+
+        connect_kwargs: dict[str, object] = {
             "hostname": self.host,
             "port": self.port,
             "username": self.username,
@@ -92,14 +130,39 @@ class SSHClient:
         if self.key_path:
             connect_kwargs["key_filename"] = self.key_path
             connect_kwargs["look_for_keys"] = False
+            if self.passphrase:
+                connect_kwargs["passphrase"] = self.passphrase
         elif self.password:
             connect_kwargs["password"] = self.password
             connect_kwargs["look_for_keys"] = False
 
         try:
-            client.connect(**connect_kwargs)
+            client.connect(**connect_kwargs)  # type: ignore[arg-type]
             logger.info("SSH connected to %s@%s:%s", self.username, self.host, self.port)
             self._client = client
+        except paramiko.PasswordRequiredException:
+            # Key is encrypted and no passphrase was provided — prompt interactively
+            import getpass
+
+            passphrase = getpass.getpass(
+                f"Passphrase for {self.key_path}: "
+            )
+            connect_kwargs["passphrase"] = passphrase
+            client.connect(**connect_kwargs)  # type: ignore[arg-type]
+            logger.info("SSH connected to %s@%s:%s (passphrase)", self.username, self.host, self.port)
+            self._client = client
+            return
+        except paramiko.SSHException as exc:
+            error_msg = str(exc).lower()
+            if "host key" in error_msg or "not found in known_hosts" in error_msg:
+                raise HostKeyVerificationError(
+                    f"Host key verification failed for {self.host}:{self.port}. "
+                    f"Add the host key to known_hosts first: "
+                    f"ssh-keyscan -p {self.port} {self.host} >> ~/.ssh/known_hosts"
+                ) from exc
+            raise SAConnectionError(
+                f"SSH error connecting to {self.host}:{self.port} — {exc}"
+            ) from exc
         except paramiko.AuthenticationException as exc:
             raise AuthenticationError(
                 f"Authentication failed for {self.username}@{self.host}"
@@ -126,9 +189,7 @@ class SSHClient:
     # ── command execution ─────────────────────
 
     def exec(self, command: str, timeout: int = 30) -> CommandResult:
-        """
-        Execute a command on the remote host and return a
-        :class:`~sentinel_audit.core.models.CommandResult`.
+        """Execute a command on the remote host.
 
         The command is run in a non-interactive, non-login shell.
         """
@@ -137,7 +198,7 @@ class SSHClient:
 
         try:
             _, stdout, stderr = self._client.exec_command(  # type: ignore[union-attr]
-                command, timeout=timeout
+                command, timeout=timeout,
             )
             exit_code: int = stdout.channel.recv_exit_status()
             return CommandResult(

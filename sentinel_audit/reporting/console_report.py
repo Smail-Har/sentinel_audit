@@ -1,82 +1,93 @@
-"""Console summary reporter for SentinelAudit."""
+"""Console summary reporter for SentinelAudit using rich."""
 
 from __future__ import annotations
 
 import logging
 
-from sentinel_audit.core.models import AuditResult, Severity
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+from sentinel_audit.core.constants import Severity
+from sentinel_audit.core.models import AuditResult
+from sentinel_audit.reporting.base import (
+    collect_recommendations,
+    top_priority_findings,
+)
 
 logger = logging.getLogger(__name__)
 
+_SEVERITY_STYLE: dict[str, str] = {
+    "CRITICAL": "bold red",
+    "HIGH": "bold bright_red",
+    "MEDIUM": "bold yellow",
+    "LOW": "green",
+    "INFO": "dim",
+}
+
 
 class ConsoleReportGenerator:
-    """Generate a compact console-friendly summary report."""
+    """Generate a rich console report printed to the terminal."""
 
-    def generate(self, result: AuditResult) -> str:
-        lines: list[str] = []
+    def generate(self, result: AuditResult, *, quiet: bool = False) -> str:
+        """Print a rich summary to stderr and return a plain-text version."""
+        console = Console(stderr=True)
 
-        lines.append(f"SentinelAudit | Target: {result.target}")
-        lines.append("=" * 72)
-        lines.append(
-            f"Score: {result.score.score}/100 ({result.score.grade}) | Risk: {result.score.risk_summary}"
+        # ── Header panel ──
+        si = result.system_info
+        score = result.score
+        grade_colour = "green" if score.score >= 70 else ("yellow" if score.score >= 40 else "red")
+
+        header = Text.assemble(
+            ("Score: ", "bold"),
+            (f"{score.score}/100 ", f"bold {grade_colour}"),
+            (f"({score.grade})", grade_colour),
+            (" — ", "dim"),
+            (score.risk_summary, "italic"),
         )
-        lines.append(
-            f"System: {result.system_info.hostname} | {result.system_info.os_name} {result.system_info.os_version} | Kernel: {result.system_info.kernel_version}"
-        )
-        lines.append(f"Uptime: {result.system_info.uptime}")
+        console.print(Panel(header, title=f"[bold]SentinelAudit[/bold] — {result.label or result.target}", border_style="blue"))
 
-        ip_addresses = [item.get("address", "") for item in result.system_info.network_interfaces if item.get("address")]
-        lines.append(f"IP: {', '.join(ip_addresses) if ip_addresses else 'N/A'}")
-        lines.append("-" * 72)
+        if not quiet:
+            # ── System info ──
+            console.print(f"  [bold]Host:[/bold] {si.hostname}  |  [bold]OS:[/bold] {si.os_name} {si.os_version}  |  [bold]Kernel:[/bold] {si.kernel_version}")
+            if result.duration_seconds is not None:
+                console.print(f"  [bold]Duration:[/bold] {result.duration_seconds:.1f}s")
+            console.print()
 
-        lines.append("Findings by severity:")
-        for severity in Severity:
-            lines.append(f"  - {severity.value:8}: {result.score.breakdown.get(severity.value, 0)}")
+            # ── Severity table ──
+            table = Table(title="Findings by Severity", show_lines=False, padding=(0, 2))
+            table.add_column("Severity", style="bold")
+            table.add_column("Count", justify="right")
+            for sev in Severity:
+                count = score.breakdown.get(sev.value, 0)
+                style = _SEVERITY_STYLE.get(sev.value, "")
+                table.add_row(Text(sev.value, style=style), str(count))
+            console.print(table)
+            console.print()
 
-        lines.append("-" * 72)
-        lines.append("Top critical/high findings:")
+            # ── Top priority findings ──
+            top = top_priority_findings(result, limit=10)
+            if top:
+                console.print("[bold]Top Priority Findings:[/bold]")
+                for f in top:
+                    style = _SEVERITY_STYLE.get(f.severity.value, "")
+                    console.print(f"  [{style}][{f.severity.value}][/{style}] {f.id} — {f.title}")
+                console.print()
 
-        priority_findings = [
-            finding
-            for finding in result.findings
-            if finding.severity in {Severity.CRITICAL, Severity.HIGH}
+            # ── Recommendations ──
+            recs = collect_recommendations(result)
+            if recs:
+                console.print("[bold]Top Recommendations:[/bold]")
+                for i, rec in enumerate(recs[:10], 1):
+                    console.print(f"  {i}. {rec}")
+                console.print()
+
+        # Return a plain-text fallback for logging / piping
+        lines = [
+            f"SentinelAudit | {result.label or result.target}",
+            f"Score: {score.score}/100 ({score.grade}) — {score.risk_summary}",
+            f"Findings: {len(result.findings)} total",
         ]
-
-        if not priority_findings:
-            lines.append("  - No findings detected.")
-        else:
-            ordered_findings = sorted(
-                priority_findings,
-                key=lambda finding: [
-                    Severity.CRITICAL,
-                    Severity.HIGH,
-                ].index(finding.severity),
-            )
-            for finding in ordered_findings[:15]:
-                lines.append(
-                    f"  - [{finding.severity.value}] {finding.id} | {finding.title}"
-                )
-
-        lines.append("-" * 72)
-        lines.append("Recommendations:")
-        recommendations = self._collect_recommendations(result)
-        if recommendations:
-            for rec in recommendations[:10]:
-                lines.append(f"  - {rec}")
-        else:
-            lines.append("  - No specific recommendation.")
-
-        output = "\n".join(lines)
         logger.info("Console report generated for %s", result.target)
-        return output
-
-    @staticmethod
-    def _collect_recommendations(result: AuditResult) -> list[str]:
-        seen: set[str] = set()
-        recommendations: list[str] = []
-        for finding in result.findings:
-            rec = finding.recommendation.strip()
-            if rec and rec not in seen:
-                seen.add(rec)
-                recommendations.append(rec)
-        return recommendations
+        return "\n".join(lines)

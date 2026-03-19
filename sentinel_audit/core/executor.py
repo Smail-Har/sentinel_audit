@@ -3,19 +3,6 @@ sentinel_audit/core/executor.py
 ────────────────────────────────
 Abstraction layer for running shell commands either locally (subprocess)
 or remotely (via an SSHClient instance).
-
-Usage
-─────
-    # Local
-    executor = LocalExecutor()
-    result = executor.run("id")
-
-    # Remote
-    from sentinel_audit.core.ssh_client import SSHClient
-    client = SSHClient("192.168.1.10", "admin", key_path="~/.ssh/id_rsa")
-    client.connect()
-    executor = RemoteExecutor(client)
-    result = executor.run("id")
 """
 
 from __future__ import annotations
@@ -26,6 +13,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from sentinel_audit.core.constants import DEFAULT_CMD_TIMEOUT
 from sentinel_audit.core.models import CommandResult
 
 if TYPE_CHECKING:
@@ -33,15 +21,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 30  # seconds
-
 
 class BaseExecutor(ABC):
     """Abstract command executor."""
 
     @abstractmethod
-    def run(self, command: str, timeout: int = DEFAULT_TIMEOUT) -> CommandResult:
-        """Execute *command* and return a :class:`CommandResult`."""
+    def run(self, command: str, timeout: int = DEFAULT_CMD_TIMEOUT) -> CommandResult:
+        """Execute *command* and return a CommandResult."""
         ...
 
     @abstractmethod
@@ -49,32 +35,20 @@ class BaseExecutor(ABC):
         """Read the content of a remote or local file."""
         ...
 
-    def run_many(
-        self, *commands: str, timeout: int = DEFAULT_TIMEOUT
-    ) -> list[CommandResult]:
+    def run_many(self, *commands: str, timeout: int = DEFAULT_CMD_TIMEOUT) -> list[CommandResult]:
         """Run multiple commands sequentially and return all results."""
         return [self.run(cmd, timeout=timeout) for cmd in commands]
 
 
-# ──────────────────────────────────────────────
-# Local executor (subprocess)
-# ──────────────────────────────────────────────
-
 class LocalExecutor(BaseExecutor):
-    """Execute commands on the local machine using :mod:`subprocess`."""
+    """Execute commands on the local machine using subprocess."""
 
-    def run(self, command: str, timeout: int = DEFAULT_TIMEOUT) -> CommandResult:
-        """
-        Run *command* via ``/bin/sh -c`` and return the captured output.
-
-        The shell is never called with user-controlled input without
-        validation; audit commands are all hard-coded strings.
-        """
+    def run(self, command: str, timeout: int = DEFAULT_CMD_TIMEOUT) -> CommandResult:
         logger.debug("LOCAL » %s", command)
         try:
             proc = subprocess.run(
                 command,
-                shell=True,          # noqa: S602  (intended: hard-coded cmds)
+                shell=True,  # noqa: S602
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -104,9 +78,9 @@ class LocalExecutor(BaseExecutor):
             )
 
     def read_file(self, path: str) -> CommandResult:
-        """Read a local file using :func:`open`."""
+        """Read a local file."""
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            with open(path, encoding="utf-8", errors="replace") as fh:
                 content = fh.read()
             return CommandResult(
                 command=f"read_file:{path}",
@@ -137,17 +111,13 @@ class LocalExecutor(BaseExecutor):
             )
 
 
-# ──────────────────────────────────────────────
-# Remote executor (SSH)
-# ──────────────────────────────────────────────
-
 class RemoteExecutor(BaseExecutor):
-    """Execute commands on a remote host via an established :class:`SSHClient`."""
+    """Execute commands on a remote host via an established SSHClient."""
 
     def __init__(self, ssh_client: "SSHClient") -> None:
         self._ssh = ssh_client
 
-    def run(self, command: str, timeout: int = DEFAULT_TIMEOUT) -> CommandResult:
+    def run(self, command: str, timeout: int = DEFAULT_CMD_TIMEOUT) -> CommandResult:
         logger.debug("SSH[%s] » %s", self._ssh.host, command)
         return self._ssh.exec(command, timeout=timeout)
 

@@ -2,8 +2,9 @@
 # SentinelAudit — Default Audit Rules
 # default_rules.yaml
 #
-# This file drives rule-based audit modules (sysctl, SSH, permissions…).
+# This file drives rule-based audit modules (sysctl, SSH, permissions, CIS).
 # Each rule has: id, description, severity, expected_value, recommendation.
+# All content in English (findings language).
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ─── Sysctl / Kernel hardening ───────────────────────────────────────────────
@@ -17,7 +18,7 @@ sysctl_rules:
     severity: MEDIUM
     recommendation: >
       Disable IP forwarding unless this host is intentionally acting as a
-      router or gateway: net.ipv4.ip_forward = 0
+      router or gateway: sysctl -w net.ipv4.ip_forward=0
 
   - id: SYSCTL-002
     key: kernel.randomize_va_space
@@ -25,7 +26,7 @@ sysctl_rules:
     expected_value: "2"
     severity: HIGH
     recommendation: >
-      Enable full ASLR: kernel.randomize_va_space = 2
+      Enable full ASLR: sysctl -w kernel.randomize_va_space=2
 
   - id: SYSCTL-003
     key: net.ipv4.conf.all.accept_redirects
@@ -33,7 +34,7 @@ sysctl_rules:
     expected_value: "0"
     severity: MEDIUM
     recommendation: >
-      Disable ICMP redirects: net.ipv4.conf.all.accept_redirects = 0
+      Disable ICMP redirects: sysctl -w net.ipv4.conf.all.accept_redirects=0
 
   - id: SYSCTL-004
     key: net.ipv4.conf.all.send_redirects
@@ -41,7 +42,7 @@ sysctl_rules:
     expected_value: "0"
     severity: LOW
     recommendation: >
-      Disable sending ICMP redirects: net.ipv4.conf.all.send_redirects = 0
+      Disable sending ICMP redirects: sysctl -w net.ipv4.conf.all.send_redirects=0
 
   - id: SYSCTL-005
     key: fs.protected_symlinks
@@ -49,7 +50,7 @@ sysctl_rules:
     expected_value: "1"
     severity: MEDIUM
     recommendation: >
-      Enable protected symlinks: fs.protected_symlinks = 1
+      Enable protected symlinks: sysctl -w fs.protected_symlinks=1
 
   - id: SYSCTL-006
     key: fs.protected_hardlinks
@@ -57,7 +58,7 @@ sysctl_rules:
     expected_value: "1"
     severity: MEDIUM
     recommendation: >
-      Enable protected hardlinks: fs.protected_hardlinks = 1
+      Enable protected hardlinks: sysctl -w fs.protected_hardlinks=1
 
   - id: SYSCTL-007
     key: net.ipv4.conf.all.rp_filter
@@ -65,7 +66,7 @@ sysctl_rules:
     expected_value: "1"
     severity: MEDIUM
     recommendation: >
-      Enable reverse path filter: net.ipv4.conf.all.rp_filter = 1
+      Enable reverse path filter: sysctl -w net.ipv4.conf.all.rp_filter=1
 
   - id: SYSCTL-008
     key: net.ipv4.icmp_echo_ignore_broadcasts
@@ -73,7 +74,7 @@ sysctl_rules:
     expected_value: "1"
     severity: LOW
     recommendation: >
-      Ignore broadcast ICMP: net.ipv4.icmp_echo_ignore_broadcasts = 1
+      Ignore broadcast ICMP: sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
 
   - id: SYSCTL-009
     key: kernel.dmesg_restrict
@@ -81,7 +82,7 @@ sysctl_rules:
     expected_value: "1"
     severity: LOW
     recommendation: >
-      Restrict dmesg to root: kernel.dmesg_restrict = 1
+      Restrict dmesg to root: sysctl -w kernel.dmesg_restrict=1
 
   - id: SYSCTL-010
     key: kernel.kptr_restrict
@@ -89,7 +90,23 @@ sysctl_rules:
     expected_value: "2"
     severity: MEDIUM
     recommendation: >
-      Restrict kernel pointers: kernel.kptr_restrict = 2
+      Restrict kernel pointers: sysctl -w kernel.kptr_restrict=2
+
+  - id: SYSCTL-011
+    key: net.ipv6.conf.all.accept_redirects
+    description: "IPv6 ICMP redirect messages are accepted."
+    expected_value: "0"
+    severity: MEDIUM
+    recommendation: >
+      Disable IPv6 ICMP redirects: sysctl -w net.ipv6.conf.all.accept_redirects=0
+
+  - id: SYSCTL-012
+    key: net.ipv4.conf.default.accept_redirects
+    description: "Default interface accepts ICMP redirect messages."
+    expected_value: "0"
+    severity: MEDIUM
+    recommendation: >
+      sysctl -w net.ipv4.conf.default.accept_redirects=0
 
 # ─── SSH configuration checks ────────────────────────────────────────────────
 
@@ -101,7 +118,8 @@ ssh_rules:
     description: "Direct root login over SSH is permitted."
     severity: CRITICAL
     recommendation: >
-      Set PermitRootLogin to 'no' or 'prohibit-password' in /etc/ssh/sshd_config.
+      Set PermitRootLogin to 'no' or 'prohibit-password' in /etc/ssh/sshd_config,
+      then restart sshd.
 
   - id: SSH-002
     directive: PasswordAuthentication
@@ -142,7 +160,7 @@ ssh_rules:
     description: "SSH Protocol 1 is insecure and deprecated."
     severity: CRITICAL
     recommendation: >
-      Use Protocol 2 only.
+      Use Protocol 2 only. Remove any Protocol directive (SSH 7.0+ default is 2).
 
   - id: SSH-007
     directive: UsePAM
@@ -198,6 +216,13 @@ file_permission_rules:
     severity: HIGH
     recommendation: "chmod 600 /etc/ssh/sshd_config && chown root:root /etc/ssh/sshd_config"
 
+  - id: PERM-007
+    path: /etc/crontab
+    expected_mode: "600"
+    description: "/etc/crontab has incorrect permissions."
+    severity: MEDIUM
+    recommendation: "chmod 600 /etc/crontab && chown root:root /etc/crontab"
+
 # ─── Compliance baseline checks (CIS) ────────────────────────────────────────
 
 compliance_checks:
@@ -205,20 +230,34 @@ compliance_checks:
   - id: CIS-1.1.1
     title: "Ensure mounting of cramfs filesystems is disabled"
     command: "modprobe -n -v cramfs 2>/dev/null"
-    pass_pattern: "install /bin/true"
+    pass_pattern: "install /bin/(true|false)"
     severity: LOW
     recommendation: "echo 'install cramfs /bin/true' >> /etc/modprobe.d/CIS.conf"
 
   - id: CIS-1.1.2
     title: "Ensure mounting of freevxfs filesystems is disabled"
     command: "modprobe -n -v freevxfs 2>/dev/null"
-    pass_pattern: "install /bin/true"
+    pass_pattern: "install /bin/(true|false)"
     severity: LOW
     recommendation: "echo 'install freevxfs /bin/true' >> /etc/modprobe.d/CIS.conf"
 
   - id: CIS-5.2.1
-    title: "Ensure permissions on /etc/ssh/sshd_config are configured (CIS)"
+    title: "Ensure permissions on /etc/ssh/sshd_config are configured"
     command: "stat -c '%a' /etc/ssh/sshd_config"
     pass_pattern: "^600$"
     severity: HIGH
     recommendation: "chmod 600 /etc/ssh/sshd_config"
+
+  - id: CIS-1.4.1
+    title: "Ensure core dumps are restricted"
+    command: "grep -E '^\\*.*hard.*core.*0' /etc/security/limits.conf /etc/security/limits.d/* 2>/dev/null || echo NOTFOUND"
+    pass_pattern: "hard.*core.*0"
+    severity: LOW
+    recommendation: "echo '* hard core 0' >> /etc/security/limits.conf"
+
+  - id: CIS-5.4.1
+    title: "Ensure password creation requirements are configured"
+    command: "grep -E '^minlen|^dcredit|^ucredit|^lcredit|^ocredit' /etc/security/pwquality.conf 2>/dev/null || echo NOTFOUND"
+    pass_pattern: "minlen"
+    severity: MEDIUM
+    recommendation: "Configure /etc/security/pwquality.conf with minlen=14 dcredit=-1 ucredit=-1 ocredit=-1 lcredit=-1"

@@ -1,75 +1,58 @@
 # SentinelAudit
 
-SentinelAudit est un outil d’audit de sécurité Linux en lecture seule. Il analyse la configuration système, la posture de sécurité et l’exposition réseau, puis produit des rapports exploitables en JSON, Markdown, HTML et console.
+Outil professionnel d'audit de sécurité Linux en **lecture seule**. SentinelAudit se connecte à un ou plusieurs serveurs via SSH, exécute des vérifications de sécurité sans laisser de trace, calcule un score et génère des rapports exploitables (JSON, Markdown, HTML, PDF, console).
 
-## Présentation du projet
+Conçu pour les consultants en cybersécurité qui présentent des rapports à des DSI et RSSI.
 
-Objectifs principaux :
-- auditer un hôte Linux local ou distant (SSH)
-- agréger les findings des modules d’audit
-- calculer un score global de sécurité (0 à 100)
-- générer des rapports lisibles et structurés
+## Caractéristiques
 
-Le projet est modulaire : chaque audit est indépendant, les erreurs sont capturées sans arrêter tout le run, et les reporters sont découplés du moteur d’audit.
+- **13 modules d'audit** : SSH, firewall, users, permissions, services, packages, kernel, cron, network, filesystem, containers, compliance (CIS)
+- **Lecture seule** : aucune modification sur la cible, zéro trace
+- **Multi-cible** : inventaire YAML pour auditer une flotte entière
+- **Scoring intelligent** : rendements décroissants + plafonds par sévérité (pas de score détruit par du bruit)
+- **Séparation inventaire/findings** : les services et packages sont collectés en inventaire, pas en findings
+- **5 formats de rapport** : JSON, Markdown, HTML (Jinja2), PDF (weasyprint), console (rich)
+- **Rapport consolidé** : vue multi-serveur en un seul HTML
+- **Sécurité SSH** : `RejectPolicy` (pas d'`AutoAddPolicy`), vérification `known_hosts`
+- **Sanitisation** : les hash de mots de passe et clés privées sont masqués dans les rapports
 
-## Project Structure
+## Structure du projet
 
 ```
 sentinel_audit/
 ├── sentinel_audit/
-│   ├── main.py
-│   ├── cli.py
+│   ├── __init__.py
+│   ├── cli.py                 # CLI (argparse)
+│   ├── main.py                # Entrypoint module
+│   ├── orchestrator.py        # Pipeline: connect → audit → score → report
+│   ├── inventory.py           # Parser inventaire YAML multi-cible
 │   ├── core/
-│   │   ├── models.py
-│   │   ├── executor.py
-│   │   ├── ssh_client.py
-│   │   ├── scoring.py
-│   │   ├── utils.py
-│   │   └── exceptions.py
-│   ├── audit/
-│   │   ├── base.py
-│   │   ├── system_info.py
-│   │   ├── ssh_audit.py
-│   │   ├── firewall_audit.py
-│   │   ├── users_audit.py
-│   │   ├── permissions_audit.py
-│   │   ├── services_audit.py
-│   │   ├── packages_audit.py
-│   │   ├── kernel_audit.py
-│   │   ├── sysctl_audit.py
-│   │   ├── cron_audit.py
-│   │   ├── network_audit.py
-│   │   ├── process_audit.py
-│   │   ├── filesystem_audit.py
-│   │   ├── container_audit.py
-│   │   ├── compliance_audit.py
-│   │   └── lynis_adapter.py
+│   │   ├── constants.py       # Severity, scoring penalties, thresholds
+│   │   ├── models.py          # Finding, AuditResult, SystemInfo, etc.
+│   │   ├── scoring.py         # Scoring engine (diminishing returns)
+│   │   ├── ssh_client.py      # SSH client (paramiko + RejectPolicy)
+│   │   ├── executor.py        # Local/Remote command execution
+│   │   ├── utils.py           # Helpers (parse sshd, sanitise, etc.)
+│   │   └── exceptions.py      # Custom exceptions
+│   ├── audit/                 # 13 audit modules
+│   ├── config/
+│   │   └── default_rules.yaml # SSH, sysctl, permissions, compliance rules
 │   ├── reporting/
+│   │   ├── base.py            # Shared helpers (DRY)
 │   │   ├── json_report.py
 │   │   ├── markdown_report.py
-│   │   ├── html_report.py
-│   │   └── console_report.py
-│   └── config/
-│       └── default_rules.yaml
-├── tests/
-│   ├── test_scoring.py
-│   ├── test_ssh_audit.py
-│   └── test_permissions.py
-├── examples/
-│   └── sample_audit_report.md
-└── README.md
+│   │   ├── html_report.py     # Jinja2 template
+│   │   ├── pdf_report.py      # weasyprint
+│   │   ├── console_report.py  # rich
+│   │   └── consolidated_report.py
+│   └── templates/
+│       ├── html_report.jinja2
+│       └── consolidated_report.jinja2
+├── tests/                     # 75 tests (pytest)
+├── pyproject.toml
+├── Dockerfile
+└── .github/workflows/ci.yml
 ```
-
-## Architecture
-
-Le flux d’exécution suit ce pipeline:
-
-1. Chargement des modules d’audit (registre modulaire)
-2. Exécution des checks en mode local ou remote
-3. Agrégation des findings dans `AuditResult`
-4. Calcul du score via `core/scoring.py`
-5. Génération des rapports (JSON / Markdown / HTML / Console)
-6. Affichage du résumé terminal
 
 ## Installation
 
@@ -78,116 +61,131 @@ Prérequis : Python 3.11+
 ```bash
 git clone https://github.com/Smail-Har/sentinel_audit.git
 cd sentinel_audit
+python3 -m venv .venv && source .venv/bin/activate
 
-python3 -m venv .venv
-source .venv/bin/activate
+# Installation standard
+pip install -e .
 
-pip install -r requirements.txt
+# Avec support PDF
+pip install -e ".[pdf]"
+
+# Avec outils de développement
+pip install -e ".[dev]"
 ```
 
 ## Utilisation
 
-### Commande principale
+### Audit d'un serveur unique
 
 ```bash
-python -m sentinel_audit.main audit --target <target>
+# Audit distant via SSH (mode par défaut)
+sentinel-audit audit --target 192.168.1.10 --ssh-user root --ssh-key ~/.ssh/id_ed25519
+
+# Audit local
+sentinel-audit audit --target localhost --mode local
+
+# Sélection de modules et format
+sentinel-audit audit --target 192.168.1.10 --include ssh,permissions,users --format html,pdf
+```
+
+### Audit multi-cible avec inventaire
+
+```bash
+sentinel-audit audit --inventory inventory.yaml --output reports/
+```
+
+Exemple d'inventaire (`inventory.yaml`) :
+
+```yaml
+defaults:
+  ssh_user: auditor
+  ssh_key: ~/.ssh/id_ed25519
+  ssh_port: 22
+
+targets:
+  - host: 192.168.1.10
+    label: Web Server (Production)
+  - host: 192.168.1.20
+    label: Database Server
+    ssh_user: admin
+    exclude_modules: [container]
+  - host: 192.168.1.30
+    label: CI/CD Runner
+    modules: [ssh, firewall, users, permissions]
+```
+
+### Lister les modules disponibles
+
+```bash
+sentinel-audit modules
 ```
 
 ### Options CLI
 
-- `--target` : cible (`localhost`, IP, hostname)
-- `--mode local|remote` : mode d’exécution
-- `--ssh-user` : utilisateur SSH (mode remote)
-- `--ssh-key` : clé privée SSH (mode remote)
-- `--output` : dossier de sortie des rapports
-- `--include` : modules à inclure (liste CSV)
-- `--exclude` : modules à exclure (liste CSV)
-- `--format` : `json,md,html,console,all` (CSV autorisé)
-- `--verbose` : logs détaillés
+| Option | Description |
+|---|---|
+| `--target` | Cible (IP ou hostname) |
+| `--inventory` | Fichier YAML inventaire multi-cible |
+| `--mode` | `local` ou `remote` (défaut: `remote`) |
+| `--ssh-user` | Utilisateur SSH (défaut: `root`) |
+| `--ssh-key` | Chemin vers la clé privée SSH |
+| `--ssh-port` | Port SSH (défaut: `22`) |
+| `--label` | Libellé pour le rapport |
+| `--output` | Dossier de sortie (défaut: `reports`) |
+| `--include` | Modules à inclure (CSV) |
+| `--exclude` | Modules à exclure (CSV) |
+| `--format` | `json,md,html,pdf,console,all` |
+| `--verbose` | Logs détaillés (DEBUG) |
 
-### Exemples de commande
+## Scoring
 
-```bash
-python -m sentinel_audit.main audit --target localhost --output reports
-python -m sentinel_audit.main audit --target 192.168.1.10 --mode remote --ssh-user admin --ssh-key ~/.ssh/id_rsa --output reports
-python -m sentinel_audit.main audit --target localhost --include ssh,permissions,users
-python -m sentinel_audit.main audit --target localhost --format all
-```
+Le score commence à 100 et diminue selon les findings :
 
-## Flux d’exécution
+| Sévérité | 1er finding | Suivants | Plafond |
+|---|---:|---:|---:|
+| CRITICAL | -15 | -10 | 40 |
+| HIGH | -8 | -5 | 30 |
+| MEDIUM | -3 | -2 | 20 |
+| LOW | -1 | -1 | 10 |
+| INFO | 0 | 0 | 0 |
 
-1. chargement des modules d’audit
-2. exécution des audits sélectionnés
-3. agrégation des findings
-4. calcul du score (`core/scoring.py`)
-5. génération des rapports
-6. affichage du résumé console
+- **Rendements décroissants** : le 1er finding coûte plus que les suivants
+- **Plafonds** : 100 LOWs ne détruisent pas le score (plafonné à -10)
+- **Plancher** : le score minimum est 5 (pas 0)
+- **Grades** : A (≥90), B (≥75), C (≥60), D (≥45), F (<45)
 
-Si un module d’audit échoue, l’erreur est enregistrée et le flux continue.
-Si un reporter échoue, les autres rapports sont quand même générés.
+## Modules d'audit
 
-## Formats de rapport
-
-- **JSON (`json_report.py`)**
-    - structure sérialisable
-    - metadata, system info, score, findings, regroupements, recommandations
-
-- **Markdown (`markdown_report.py`)**
-    - lisible sur GitHub
-    - résumé, score, tableau par gravité, détails des findings, recommandations
-
-- **HTML (`html_report.py`)**
-    - simple, propre, autonome
-    - sans dépendances frontend
-
-- **Console (`console_report.py`)**
-    - score global
-    - nombre de findings par gravité
-    - top findings critiques et élevés
-
-## Example Output
-
-Un exemple réaliste de rapport est disponible dans:
-
-- `examples/sample_audit_report.md`
-
-Extrait de résumé console:
-
-```text
-SentinelAudit | Target: localhost
-========================================================================
-Score: 55/100 (D) | Risk: Critical risk posture: 1 critical finding(s) require immediate remediation.
-Findings by severity:
-    - INFO    : 2
-    - LOW     : 0
-    - MEDIUM  : 3
-    - HIGH    : 1
-    - CRITICAL: 1
-Top critical/high findings:
-    - [CRITICAL] USR-001 | Compte UID 0: deploy
-    - [HIGH] SSH-002 | SSH: PasswordAuthentication activé
-```
+| Module | Description |
+|---|---|
+| `system_info` | Collecte des infos système (inventaire) |
+| `ssh` | Vérification sshd_config vs règles YAML |
+| `firewall` | Détection firewall actif, politique INPUT |
+| `users` | UID 0, NOPASSWD sudo, mots de passe vides |
+| `permissions` | Permissions fichiers sensibles vs règles YAML |
+| `services` | Services dangereux (telnet, rsh, etc.) |
+| `packages` | Mises à jour de sécurité en attente |
+| `kernel` | Paramètres sysctl vs CIS benchmarks |
+| `cron` | Patterns suspects dans les cron jobs |
+| `network` | Ports sensibles exposés (Redis, MySQL, etc.) |
+| `filesystem` | SUID/SGID inattendus, /tmp sans noexec |
+| `container` | Conteneurs Docker privilégiés, socket |
+| `compliance` | Vérifications CIS depuis le YAML |
 
 ## Exécution des tests
 
-Le framework cible est **pytest**.
-
 ```bash
-pytest tests -v
+python3 -m pytest tests/ -v
 ```
 
-Tests unitaires inclus :
-- scoring
-- audit SSH
-- audit permissions
+75 tests couvrant : scoring, SSH, permissions, firewall, users, services, network, cron, filesystem, containers, inventaire, reporters, CLI, utilitaires.
 
-## Roadmap
+## Docker
 
-- amélioration du filtrage et du tri des findings
-- enrichissement des règles de conformité
-- export PDF
-- intégration CI/CD (GitHub Actions)
-- extension des audits containers et cloud
+```bash
+docker build -t sentinel-audit .
+docker run --rm -v $(pwd)/reports:/app/reports sentinel-audit audit --target 192.168.1.10 --ssh-key /app/keys/id_ed25519
+```
 
 ## Licence
 

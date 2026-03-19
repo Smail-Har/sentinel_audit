@@ -1,59 +1,78 @@
+"""Tests for the permissions audit module."""
+
 from __future__ import annotations
 
+from unittest.mock import patch
+
+from tests.conftest import FakeExecutor, cmd, make_result
+
 from sentinel_audit.audit.permissions_audit import PermissionsAuditor
-from sentinel_audit.core.models import AuditResult, CommandResult, Severity
+from sentinel_audit.core.constants import Severity
 
 
-class FakeExecutor:
-    def __init__(self, command_map: dict[str, CommandResult]) -> None:
-        self.command_map = command_map
+# Mock YAML rules for test isolation
+_TEST_RULES = [
+    {
+        "id": "PERM-001",
+        "path": "/etc/passwd",
+        "expected_mode": "644",
+        "severity": "HIGH",
+        "description": "/etc/passwd should be 644",
+        "recommendation": "chmod 644 /etc/passwd",
+    },
+    {
+        "id": "PERM-002",
+        "path": "/etc/shadow",
+        "expected_mode": "640",
+        "severity": "CRITICAL",
+        "description": "/etc/shadow should be 640",
+        "recommendation": "chmod 640 /etc/shadow",
+    },
+]
 
-    def run(self, command: str, timeout: int = 30) -> CommandResult:
-        return self.command_map.get(
-            command,
-            CommandResult(command=command, stdout="", stderr="unexpected command", return_code=1),
-        )
 
-    def read_file(self, path: str) -> CommandResult:
-        return CommandResult(command=f"read_file:{path}", stdout="", stderr="", return_code=0)
+def _make_auditor(command_map: dict[str, object]) -> PermissionsAuditor:
+    result = make_result()
+    executor = FakeExecutor(command_map=command_map)
+    return PermissionsAuditor(executor, result)
 
 
-def test_permissions_audit_detects_mismatched_modes() -> None:
-    result = AuditResult(target="localhost")
-    command_map = {
-        "stat -c '%a' /etc/passwd": CommandResult("", "644", "", 0),
-        "stat -c '%a' /etc/shadow": CommandResult("", "644", "", 0),
-        "stat -c '%a' /etc/sudoers": CommandResult("", "444", "", 0),
-        "stat -c '%a' /etc/ssh/sshd_config": CommandResult("", "600", "", 0),
-    }
-    auditor = PermissionsAuditor(FakeExecutor(command_map), result)
-
+@patch.object(PermissionsAuditor, "_load_permission_rules", return_value=_TEST_RULES)
+def test_detects_wrong_permissions(mock_rules: object) -> None:
+    auditor = _make_auditor({
+        "stat -c '%a' /etc/passwd": cmd("644"),
+        "stat -c '%a' /etc/shadow": cmd("644"),  # Wrong: should be 640
+    })
     auditor.run()
 
-    finding_ids = {finding.id for finding in result.findings}
-    assert "PERM-_etc_shadow" in finding_ids
-    assert "PERM-_etc_sudoers" in finding_ids
-    assert "PERM-_etc_passwd" not in finding_ids
-    assert "PERM-_etc_ssh_sshd_config" not in finding_ids
+    ids = {f.id for f in auditor.result.findings}
+    assert "PERM-002" in ids
+    assert "PERM-001" not in ids
 
-    by_id = {finding.id: finding for finding in result.findings}
-    assert by_id["PERM-_etc_shadow"].severity == Severity.CRITICAL
-    assert by_id["PERM-_etc_sudoers"].severity == Severity.CRITICAL
+    finding = auditor.result.findings[0]
+    assert finding.severity == Severity.CRITICAL
+    assert "644" in finding.evidence
 
 
-def test_permissions_audit_reports_stat_failures() -> None:
-    result = AuditResult(target="localhost")
-    command_map = {
-        "stat -c '%a' /etc/passwd": CommandResult("", "", "permission denied", 1),
-        "stat -c '%a' /etc/shadow": CommandResult("", "640", "", 0),
-        "stat -c '%a' /etc/sudoers": CommandResult("", "440", "", 0),
-        "stat -c '%a' /etc/ssh/sshd_config": CommandResult("", "600", "", 0),
-    }
-    auditor = PermissionsAuditor(FakeExecutor(command_map), result)
-
+@patch.object(PermissionsAuditor, "_load_permission_rules", return_value=_TEST_RULES)
+def test_correct_permissions_no_findings(mock_rules: object) -> None:
+    auditor = _make_auditor({
+        "stat -c '%a' /etc/passwd": cmd("644"),
+        "stat -c '%a' /etc/shadow": cmd("640"),
+    })
     auditor.run()
 
-    info_findings = [finding for finding in result.findings if finding.id.startswith("PERM-NOACCESS")]
-    assert len(info_findings) == 1
-    assert info_findings[0].severity == Severity.INFO
-    assert "/etc/passwd" in info_findings[0].title
+    assert len(auditor.result.findings) == 0
+
+
+@patch.object(PermissionsAuditor, "_load_permission_rules", return_value=_TEST_RULES)
+def test_stat_failure_produces_info_finding(mock_rules: object) -> None:
+    auditor = _make_auditor({
+        "stat -c '%a' /etc/passwd": cmd(stderr="permission denied", rc=1),
+        "stat -c '%a' /etc/shadow": cmd("640"),
+    })
+    auditor.run()
+
+    noaccess = [f for f in auditor.result.findings if "NOACCESS" in f.id]
+    assert len(noaccess) == 1
+    assert noaccess[0].severity == Severity.INFO

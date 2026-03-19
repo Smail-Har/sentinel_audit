@@ -2,16 +2,6 @@
 sentinel_audit/audit/base.py
 ─────────────────────────────
 Abstract base class that every audit module must inherit from.
-
-Architecture contract
-─────────────────────
-A module:
-
-1.  Inherits :class:`BaseAuditor`.
-2.  Implements :meth:`run` which may call helpers via ``self.executor``.
-3.  Adds findings via ``self.result.add_finding(…)``.
-4.  Never raises unhandled exceptions externally — catches errors and
-    appends them to ``self.result.audit_errors`` instead.
 """
 
 from __future__ import annotations
@@ -20,31 +10,18 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
+from sentinel_audit.core.constants import Severity
 from sentinel_audit.core.executor import BaseExecutor
-from sentinel_audit.core.models import AuditResult, Finding, Severity
+from sentinel_audit.core.models import AuditResult, CommandResult, Finding
+from sentinel_audit.core.utils import sanitise_evidence
 
 logger = logging.getLogger(__name__)
 
 
 class BaseAuditor(ABC):
-    """
-    Abstract auditor.  All concrete audit modules extend this class.
+    """Abstract auditor.  All concrete audit modules extend this class."""
 
-    Parameters
-    ----------
-    executor:
-        The command executor to use (local or remote).
-    result:
-        The shared :class:`~sentinel_audit.core.models.AuditResult` to
-        populate with findings.
-    config:
-        Optional dict of module-specific configuration values.
-    """
-
-    #: Human-readable name shown in logs and reports.
     name: str = "BaseAuditor"
-
-    #: Category tag stored on every finding this module produces.
     category: str = "generic"
 
     def __init__(
@@ -58,19 +35,10 @@ class BaseAuditor(ABC):
         self.config: dict[str, Any] = config or {}
         self._log = logging.getLogger(f"sentinel_audit.audit.{self.category}")
 
-    # ── public interface ──────────────────────
-
     @abstractmethod
     def run(self) -> None:
-        """
-        Execute the audit and populate ``self.result`` with findings.
-
-        Must never raise; catch all exceptions and append a message to
-        ``self.result.audit_errors``.
-        """
+        """Execute the audit and populate ``self.result`` with findings."""
         ...
-
-    # ── protected helpers ─────────────────────
 
     def _add_finding(
         self,
@@ -83,14 +51,14 @@ class BaseAuditor(ABC):
         recommendation: str = "",
         reference: str = "",
     ) -> None:
-        """Convenience wrapper for creating and registering a finding."""
+        """Create and register a finding with sanitised evidence."""
         finding = Finding(
             id=id,
             title=title,
             description=description,
             severity=severity,
             category=self.category,
-            evidence=evidence,
+            evidence=sanitise_evidence(evidence),
             recommendation=recommendation,
             reference=reference,
         )
@@ -103,24 +71,30 @@ class BaseAuditor(ABC):
         self._log.warning(full_msg)
         self.result.audit_errors.append(full_msg)
 
-    def _run_command(self, command: str, timeout: int = 30):
-        """
-        Run *command* and return the result; record errors gracefully.
-
-        Returns a :class:`~sentinel_audit.core.models.CommandResult`.
-        """
+    def _run_command(self, command: str, timeout: int = 30) -> CommandResult:
+        """Run *command* and return the result; record errors gracefully."""
         try:
             return self.executor.run(command, timeout=timeout)
         except Exception as exc:  # noqa: BLE001
             self._record_error(f"Command failed '{command}': {exc}")
-            from sentinel_audit.core.models import CommandResult
             return CommandResult(command=command, stdout="", stderr=str(exc), return_code=-1)
 
-    def _read_file(self, path: str):
+    @staticmethod
+    def _is_permission_denied(result: CommandResult) -> bool:
+        """Return True if *result* failed due to insufficient privileges."""
+        if result.ok:
+            return False
+        combined = (result.stdout + result.stderr).lower()
+        return any(kw in combined for kw in (
+            "permission denied", "not permitted", "operation not permitted",
+            "you need to be root", "must be root", "requires root",
+            "access denied", "insufficient privileges",
+        ))
+
+    def _read_file(self, path: str) -> CommandResult:
         """Read a file; record errors gracefully."""
         try:
             return self.executor.read_file(path)
         except Exception as exc:  # noqa: BLE001
             self._record_error(f"Cannot read file '{path}': {exc}")
-            from sentinel_audit.core.models import CommandResult
             return CommandResult(command=f"read:{path}", stdout="", stderr=str(exc), return_code=-1)

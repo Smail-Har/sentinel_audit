@@ -9,8 +9,9 @@ from __future__ import annotations
 import logging
 import re
 import stat
-from pathlib import Path
 from typing import Any
+
+from sentinel_audit.core.constants import ALPINE_LIKE, DEBIAN_LIKE, RHEL_LIKE
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +21,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 
 def parse_key_value(text: str, separator: str = "=") -> dict[str, str]:
-    """
-    Parse a block of ``key=value`` (or ``key: value``) lines into a dict.
-
-    Lines starting with ``#`` and blank lines are ignored.
-
-    >>> parse_key_value("PORT=22\\n# comment\\nProtocol 2", separator=" ")
-    {'PORT': '22', 'Protocol': '2'}
-    """
+    """Parse ``key=value`` lines into a dict.  Comments and blanks are skipped."""
     result: dict[str, str] = {}
     for line in text.splitlines():
         line = line.strip()
@@ -40,28 +34,23 @@ def parse_key_value(text: str, separator: str = "=") -> dict[str, str]:
 
 
 def parse_sshd_config(text: str) -> dict[str, str]:
-    """
-    Parse ``sshd_config``-style directives (space-separated key value).
-
-    Only the first occurrence of each directive is kept (matching sshd
-    behaviour where the first definition wins).
-    """
+    """Parse ``sshd_config``-style directives.  First definition wins."""
     result: dict[str, str] = {}
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        parts = stripped.split(None, 1)   # split on first whitespace
+        parts = stripped.split(None, 1)
         if len(parts) == 2:
             key = parts[0]
-            if key not in result:          # first definition wins
+            if key not in result:
                 result[key] = parts[1]
     return result
 
 
 def octal_permissions(mode: int) -> str:
-    """Convert a raw ``st_mode`` integer to an octal string like ``0o644``."""
-    return oct(stat.S_IMODE(mode))
+    """Convert a raw ``st_mode`` integer to an octal string like ``644``."""
+    return oct(stat.S_IMODE(mode))[2:]
 
 
 def parse_octal(octal_str: str) -> int:
@@ -74,18 +63,14 @@ def parse_octal(octal_str: str) -> int:
 # ──────────────────────────────────────────────
 
 def detect_os_family(os_id: str) -> str:
-    """
-    Return a normalised OS family string from an ``/etc/os-release`` ID.
-
-    Returns ``'debian'``, ``'rhel'``, or ``'unknown'``.
-    """
-    debian_like = {"debian", "ubuntu", "linuxmint", "pop", "kali", "raspbian"}
-    rhel_like = {"rhel", "centos", "rocky", "almalinux", "fedora", "ol"}
-    lower = os_id.lower()
-    if lower in debian_like:
+    """Return ``'debian'``, ``'rhel'``, ``'alpine'``, or ``'unknown'``."""
+    lower = os_id.lower().strip('"').strip("'")
+    if lower in DEBIAN_LIKE:
         return "debian"
-    if lower in rhel_like:
+    if lower in RHEL_LIKE:
         return "rhel"
+    if lower in ALPINE_LIKE:
+        return "alpine"
     return "unknown"
 
 
@@ -94,13 +79,9 @@ def detect_os_family(os_id: str) -> str:
 # ──────────────────────────────────────────────
 
 def parse_ss_output(output: str) -> list[dict[str, str]]:
-    """
-    Parse ``ss -tlnup`` output into a list of dicts with keys:
-    ``proto``, ``local_address``, ``local_port``, ``process``.
-    """
+    """Parse ``ss -tlnup`` output into structured entries."""
     entries: list[dict[str, str]] = []
     for line in output.splitlines():
-        # Skip header lines
         if line.startswith("Netid") or not line.strip():
             continue
         parts = line.split()
@@ -109,47 +90,24 @@ def parse_ss_output(output: str) -> list[dict[str, str]]:
         proto = parts[0]
         local = parts[4]
         process = parts[-1] if len(parts) > 5 else ""
-        # local is like  0.0.0.0:22  or  [::]:22
         if ":" in local:
             addr, port = local.rsplit(":", 1)
         else:
             addr, port = local, ""
-        entries.append(
-            {
-                "proto": proto,
-                "local_address": addr,
-                "local_port": port,
-                "process": process,
-            }
-        )
+        entries.append({
+            "proto": proto,
+            "local_address": addr,
+            "local_port": port,
+            "process": process,
+        })
     return entries
 
 
-def parse_netstat_output(output: str) -> list[dict[str, str]]:
-    """Parse ``netstat -tlnup`` output similarly to :func:`parse_ss_output`."""
-    entries: list[dict[str, str]] = []
-    for line in output.splitlines():
-        if not line or line.startswith(("Active", "Proto", "Netid")):
-            continue
-        parts = line.split()
-        if len(parts) < 4:
-            continue
-        proto = parts[0]
-        local = parts[3]
-        if ":" in local:
-            addr, port = local.rsplit(":", 1)
-        else:
-            addr, port = local, ""
-        process = parts[-1] if len(parts) >= 7 else ""
-        entries.append(
-            {
-                "proto": proto,
-                "local_address": addr,
-                "local_port": port,
-                "process": process,
-            }
-        )
-    return entries
+def is_address_exposed(address: str) -> bool:
+    """Return True if the address is externally reachable (not loopback)."""
+    loopback = {"127.0.0.1", "::1", "[::1]", "localhost"}
+    cleaned = address.strip("[]")
+    return cleaned not in loopback and not cleaned.startswith("127.")
 
 
 # ──────────────────────────────────────────────
@@ -157,15 +115,33 @@ def parse_netstat_output(output: str) -> list[dict[str, str]]:
 # ──────────────────────────────────────────────
 
 def truncate(text: str, max_len: int = 500) -> str:
-    """Truncate *text* to *max_len* characters, appending ``'…'`` if clipped."""
+    """Truncate *text* to *max_len* characters."""
     if len(text) <= max_len:
         return text
     return text[:max_len] + "…"
 
 
+def sanitise_evidence(text: str) -> str:
+    """Remove potentially sensitive data from evidence strings.
+
+    Strips anything that looks like a password hash, private key content,
+    or token.
+    """
+    # Mask password hashes ($6$..., $y$...)
+    text = re.sub(r"\$[0-9a-z]+\$[^\s:]+", "<HASH_REDACTED>", text, flags=re.IGNORECASE)
+    # Mask private key contents
+    text = re.sub(
+        r"-----BEGIN[A-Z ]*PRIVATE KEY-----.*?-----END[A-Z ]*PRIVATE KEY-----",
+        "<PRIVATE_KEY_REDACTED>",
+        text,
+        flags=re.DOTALL,
+    )
+    return text
+
+
 def safe_get(mapping: dict[str, Any], *keys: str, default: Any = None) -> Any:
-    """Traverse nested dicts safely, returning *default* on any missing key."""
-    current = mapping
+    """Traverse nested dicts safely."""
+    current: Any = mapping
     for key in keys:
         if not isinstance(current, dict):
             return default
