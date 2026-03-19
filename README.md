@@ -76,7 +76,7 @@ Le flux d’exécution suit ce pipeline:
 Prérequis : Python 3.11+
 
 ```bash
-git clone https://github.com/your-org/sentinel_audit.git
+git clone https://github.com/Smail-Har/sentinel_audit.git
 cd sentinel_audit
 
 python3 -m venv .venv
