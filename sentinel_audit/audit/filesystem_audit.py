@@ -10,25 +10,41 @@ from sentinel_audit.audit.base import BaseAuditor
 from sentinel_audit.core.constants import Severity
 
 # SUID binaries that are expected and safe on most systems
-_EXPECTED_SUID: frozenset[str] = frozenset({
-    "/usr/bin/passwd", "/usr/bin/chage", "/usr/bin/gpasswd",
-    "/usr/bin/chfn", "/usr/bin/chsh", "/usr/bin/newgrp",
-    "/usr/bin/su", "/usr/bin/sudo", "/usr/bin/mount",
-    "/usr/bin/umount", "/usr/bin/pkexec", "/usr/bin/crontab",
-    "/usr/bin/at", "/usr/bin/fusermount", "/usr/bin/fusermount3",
-    "/usr/lib/dbus-1.0/dbus-daemon-launch-helper",
-    "/usr/lib/openssh/ssh-keysign",
-    "/usr/libexec/openssh/ssh-keysign",
-    "/usr/sbin/pam_timestamp_check",
-    "/usr/sbin/unix_chkpwd",
-    "/usr/bin/expiry",
-    "/usr/bin/wall",
-    "/usr/bin/ssh-agent",
-    "/usr/bin/write",
-    "/bin/su", "/bin/mount", "/bin/umount", "/bin/ping",
-    "/usr/bin/ping", "/usr/bin/traceroute",
-    "/sbin/mount.nfs",
-})
+_EXPECTED_SUID: frozenset[str] = frozenset(
+    {
+        "/usr/bin/passwd",
+        "/usr/bin/chage",
+        "/usr/bin/gpasswd",
+        "/usr/bin/chfn",
+        "/usr/bin/chsh",
+        "/usr/bin/newgrp",
+        "/usr/bin/su",
+        "/usr/bin/sudo",
+        "/usr/bin/mount",
+        "/usr/bin/umount",
+        "/usr/bin/pkexec",
+        "/usr/bin/crontab",
+        "/usr/bin/at",
+        "/usr/bin/fusermount",
+        "/usr/bin/fusermount3",
+        "/usr/lib/dbus-1.0/dbus-daemon-launch-helper",
+        "/usr/lib/openssh/ssh-keysign",
+        "/usr/libexec/openssh/ssh-keysign",
+        "/usr/sbin/pam_timestamp_check",
+        "/usr/sbin/unix_chkpwd",
+        "/usr/bin/expiry",
+        "/usr/bin/wall",
+        "/usr/bin/ssh-agent",
+        "/usr/bin/write",
+        "/bin/su",
+        "/bin/mount",
+        "/bin/umount",
+        "/bin/ping",
+        "/usr/bin/ping",
+        "/usr/bin/traceroute",
+        "/sbin/mount.nfs",
+    }
+)
 
 
 class FilesystemAuditor(BaseAuditor):
@@ -68,10 +84,7 @@ class FilesystemAuditor(BaseAuditor):
                 ),
                 severity=Severity.HIGH if len(unexpected) > 3 else Severity.MEDIUM,
                 evidence="\n".join(unexpected[:10]),
-                recommendation=(
-                    "Review each binary. Remove SUID/SGID bit if not needed: "
-                    "chmod u-s,g-s <file>"
-                ),
+                recommendation=("Review each binary. Remove SUID/SGID bit if not needed: chmod u-s,g-s <file>"),
             )
 
     def _check_world_writable_dirs(self) -> None:
@@ -112,15 +125,11 @@ class FilesystemAuditor(BaseAuditor):
                 id="FS-003",
                 title="/tmp is not a separate mount point",
                 description=(
-                    "/tmp is not mounted as a separate filesystem. "
-                    "This prevents applying noexec,nosuid,nodev options."
+                    "/tmp is not mounted as a separate filesystem. This prevents applying noexec,nosuid,nodev options."
                 ),
                 severity=Severity.LOW,
                 evidence="No separate mount for /tmp found",
-                recommendation=(
-                    "Mount /tmp as a separate partition with options: "
-                    "noexec,nosuid,nodev"
-                ),
+                recommendation=("Mount /tmp as a separate partition with options: noexec,nosuid,nodev"),
             )
             return
 

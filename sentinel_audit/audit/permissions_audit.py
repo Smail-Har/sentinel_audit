@@ -61,6 +61,6 @@ class PermissionsAuditor(BaseAuditor):
             with open(_RULES_PATH, encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
             return data.get("file_permission_rules", [])  # type: ignore[no-any-return]
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_error(f"Cannot load permission rules: {exc}")
             return []

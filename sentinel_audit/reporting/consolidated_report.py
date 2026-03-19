@@ -28,7 +28,7 @@ class ConsolidatedReportGenerator:
         )
 
     def generate(self, results: list[AuditResult], output_path: str) -> str:
-        summaries = []
+        summaries: list[dict[str, object]] = []
         for r in results:
             summaries.append(
                 {
@@ -49,7 +49,8 @@ class ConsolidatedReportGenerator:
                 }
             )
 
-        avg_score = round(sum(s["score"] for s in summaries) / len(summaries)) if summaries else 0
+        scores = [r.score.score for r in results]
+        avg_score = round(sum(scores) / len(scores)) if scores else 0
 
         template = self._env.get_template("consolidated_report.jinja2")
         html_report = template.render(

@@ -30,10 +30,7 @@ def collect_recommendations(result: AuditResult) -> list[str]:
 
 def top_priority_findings(result: AuditResult, limit: int = 5) -> list[Finding]:
     """Return the top N critical/high findings for executive summary."""
-    priority = [
-        f for f in result.findings
-        if f.severity in {Severity.CRITICAL, Severity.HIGH}
-    ]
+    priority = [f for f in result.findings if f.severity in {Severity.CRITICAL, Severity.HIGH}]
     priority.sort(key=lambda f: f.severity, reverse=True)
     return priority[:limit]
 
@@ -61,9 +58,7 @@ def _dedup_key(finding: Finding) -> str | None:
     ``/etc/ssh/sshd_config``).  Returns None when no paths are found
     (no dedup possible).
     """
-    paths = sorted(set(
-        _PATH_RE.findall(finding.evidence + " " + finding.recommendation)
-    ))
+    paths = sorted(set(_PATH_RE.findall(finding.evidence + " " + finding.recommendation)))
     if not paths:
         return None
     return ",".join(paths)

@@ -30,9 +30,7 @@ class PackagesAuditor(BaseAuditor):
         elif family == "alpine":
             self._audit_alpine()
         else:
-            self._record_error(
-                f"Unknown OS family '{os_id}' — package audit skipped."
-            )
+            self._record_error(f"Unknown OS family '{os_id}' — package audit skipped.")
 
     def _detect_os_id(self) -> str:
         r = self._run_command("cat /etc/os-release 2>/dev/null")
@@ -66,8 +64,7 @@ class PackagesAuditor(BaseAuditor):
                     id="PKG-001",
                     title=f"{len(upgradable)} package update(s) available",
                     description=(
-                        f"There are {len(upgradable)} packages with pending updates. "
-                        f"Some may include security patches."
+                        f"There are {len(upgradable)} packages with pending updates. Some may include security patches."
                     ),
                     severity=Severity.MEDIUM if len(upgradable) > 10 else Severity.LOW,
                     evidence=f"Upgradable: {', '.join(upgradable[:10])}"
@@ -98,10 +95,7 @@ class PackagesAuditor(BaseAuditor):
                 self._add_finding(
                     id="PKG-002",
                     title=f"{len(upgradable)} security update(s) available",
-                    description=(
-                        f"There are {len(upgradable)} packages with pending "
-                        f"security updates."
-                    ),
+                    description=(f"There are {len(upgradable)} packages with pending security updates."),
                     severity=Severity.MEDIUM if len(upgradable) > 5 else Severity.LOW,
                     evidence=f"Upgradable: {', '.join(upgradable[:10])}"
                     + (f" ... and {len(upgradable) - 10} more" if len(upgradable) > 10 else ""),

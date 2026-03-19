@@ -20,15 +20,11 @@ class JsonReportGenerator:
     def generate(self, result: AuditResult, output_path: str | None = None) -> dict[str, Any]:
         """Build and optionally write the JSON report payload."""
         findings_by_severity = {
-            severity.value: [f.to_dict() for f in result.findings_by_severity(severity)]
-            for severity in Severity
+            severity.value: [f.to_dict() for f in result.findings_by_severity(severity)] for severity in Severity
         }
 
         grouped = findings_grouped_by_category(result)
-        by_category = {
-            cat: [f.to_dict() for f in findings]
-            for cat, findings in grouped.items()
-        }
+        by_category = {cat: [f.to_dict() for f in findings] for cat, findings in grouped.items()}
 
         payload: dict[str, Any] = {
             "metadata": {

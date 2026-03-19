@@ -8,10 +8,10 @@ from sentinel_audit.reporting.markdown_report import MarkdownReportGenerator
 from sentinel_audit.reporting.pdf_report import PdfReportGenerator
 
 __all__ = [
-	"ConsoleReportGenerator",
-	"ConsolidatedReportGenerator",
-	"HtmlReportGenerator",
-	"JsonReportGenerator",
-	"MarkdownReportGenerator",
-	"PdfReportGenerator",
+    "ConsoleReportGenerator",
+    "ConsolidatedReportGenerator",
+    "HtmlReportGenerator",
+    "JsonReportGenerator",
+    "MarkdownReportGenerator",
+    "PdfReportGenerator",
 ]

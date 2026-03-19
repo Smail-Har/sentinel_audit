@@ -6,7 +6,6 @@ If Docker is present, collect container inventory and flag privileged mode.
 
 from __future__ import annotations
 
-import json
 import logging
 
 from sentinel_audit.audit.base import BaseAuditor
@@ -39,9 +38,7 @@ class ContainerAuditor(BaseAuditor):
                 ),
                 severity=Severity.INFO,
                 evidence="Permission denied accessing Docker daemon",
-                recommendation=(
-                    "Add the audit user to the 'docker' group or run as root."
-                ),
+                recommendation=("Add the audit user to the 'docker' group or run as root."),
             )
             return
 
@@ -51,26 +48,24 @@ class ContainerAuditor(BaseAuditor):
 
     def _collect_container_inventory(self) -> None:
         """Collect running containers into inventory."""
-        r = self._run_command(
-            "docker ps --format '{{.ID}}|{{.Image}}|{{.Names}}|{{.Ports}}|{{.Status}}' 2>/dev/null"
-        )
+        r = self._run_command("docker ps --format '{{.ID}}|{{.Image}}|{{.Names}}|{{.Ports}}|{{.Status}}' 2>/dev/null")
         if r.ok and r.stdout.strip():
             for line in r.stdout.splitlines():
                 parts = line.split("|", 4)
                 if len(parts) >= 3:
-                    self.result.system_info.containers.append({
-                        "id": parts[0],
-                        "image": parts[1],
-                        "name": parts[2],
-                        "ports": parts[3] if len(parts) > 3 else "",
-                        "status": parts[4] if len(parts) > 4 else "",
-                    })
+                    self.result.system_info.containers.append(
+                        {
+                            "id": parts[0],
+                            "image": parts[1],
+                            "name": parts[2],
+                            "ports": parts[3] if len(parts) > 3 else "",
+                            "status": parts[4] if len(parts) > 4 else "",
+                        }
+                    )
 
     def _check_privileged_containers(self) -> None:
         """Use docker inspect to detect privileged containers."""
-        r = self._run_command(
-            "docker ps -q 2>/dev/null"
-        )
+        r = self._run_command("docker ps -q 2>/dev/null")
         if not r.ok or not r.stdout.strip():
             return
 

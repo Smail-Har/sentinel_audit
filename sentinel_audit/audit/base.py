@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from sentinel_audit.core.constants import Severity
 from sentinel_audit.core.executor import BaseExecutor
@@ -28,7 +28,7 @@ class BaseAuditor(ABC):
         self,
         executor: BaseExecutor,
         result: AuditResult,
-        config: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ) -> None:
         self.executor = executor
         self.result = result
@@ -75,7 +75,7 @@ class BaseAuditor(ABC):
         """Run *command* and return the result; record errors gracefully."""
         try:
             return self.executor.run(command, timeout=timeout)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_error(f"Command failed '{command}': {exc}")
             return CommandResult(command=command, stdout="", stderr=str(exc), return_code=-1)
 
@@ -85,16 +85,24 @@ class BaseAuditor(ABC):
         if result.ok:
             return False
         combined = (result.stdout + result.stderr).lower()
-        return any(kw in combined for kw in (
-            "permission denied", "not permitted", "operation not permitted",
-            "you need to be root", "must be root", "requires root",
-            "access denied", "insufficient privileges",
-        ))
+        return any(
+            kw in combined
+            for kw in (
+                "permission denied",
+                "not permitted",
+                "operation not permitted",
+                "you need to be root",
+                "must be root",
+                "requires root",
+                "access denied",
+                "insufficient privileges",
+            )
+        )
 
     def _read_file(self, path: str) -> CommandResult:
         """Read a file; record errors gracefully."""
         try:
             return self.executor.read_file(path)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_error(f"Cannot read file '{path}': {exc}")
             return CommandResult(command=f"read:{path}", stdout="", stderr=str(exc), return_code=-1)

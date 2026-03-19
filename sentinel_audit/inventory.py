@@ -53,9 +53,7 @@ def load_inventory(path: str | Path) -> list[InventoryTarget]:
     targets: list[InventoryTarget] = []
     for idx, raw in enumerate(targets_raw):
         if not isinstance(raw, dict) or "host" not in raw:
-            raise InventoryError(
-                f"Target #{idx + 1} is missing required 'host' field."
-            )
+            raise InventoryError(f"Target #{idx + 1} is missing required 'host' field.")
 
         # Merge defaults with target-specific overrides
         ssh_key = raw.get("ssh_key", defaults.get("ssh_key"))

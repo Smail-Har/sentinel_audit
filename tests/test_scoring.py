@@ -21,6 +21,7 @@ def _finding(identifier: str, severity: Severity) -> Finding:
 
 # ── Grade thresholds ──
 
+
 def test_compute_grade_thresholds() -> None:
     assert compute_grade(95) == "A"
     assert compute_grade(90) == "A"
@@ -35,6 +36,7 @@ def test_compute_grade_thresholds() -> None:
 
 
 # ── Score computation ──
+
 
 def test_one_of_each_severity() -> None:
     """One finding per severity: 100 - 15 - 8 - 3 - 1 - 0 = 73."""
@@ -52,7 +54,11 @@ def test_one_of_each_severity() -> None:
     assert score.grade == "C"
     assert score.total_findings == 5
     assert score.breakdown == {
-        "INFO": 1, "LOW": 1, "MEDIUM": 1, "HIGH": 1, "CRITICAL": 1,
+        "INFO": 1,
+        "LOW": 1,
+        "MEDIUM": 1,
+        "HIGH": 1,
+        "CRITICAL": 1,
     }
 
 

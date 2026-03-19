@@ -11,11 +11,25 @@ from sentinel_audit.audit.base import BaseAuditor
 from sentinel_audit.core.constants import Severity
 
 # Services that should generally NOT be running on a hardened server
-_DANGEROUS_SERVICES: frozenset[str] = frozenset({
-    "telnet", "telnetd", "rsh", "rshd", "rlogin", "rlogind",
-    "tftp", "tftpd", "vsftpd", "proftpd", "pure-ftpd",
-    "xinetd", "rpcbind", "avahi-daemon", "cups",
-})
+_DANGEROUS_SERVICES: frozenset[str] = frozenset(
+    {
+        "telnet",
+        "telnetd",
+        "rsh",
+        "rshd",
+        "rlogin",
+        "rlogind",
+        "tftp",
+        "tftpd",
+        "vsftpd",
+        "proftpd",
+        "pure-ftpd",
+        "xinetd",
+        "rpcbind",
+        "avahi-daemon",
+        "cups",
+    }
+)
 
 
 class ServicesAuditor(BaseAuditor):
@@ -36,8 +50,7 @@ class ServicesAuditor(BaseAuditor):
     def _collect_running_services(self) -> None:
         """Collect running services into SystemInfo inventory."""
         r = self._run_command(
-            "systemctl list-units --type=service --state=running "
-            "--no-pager --no-legend --plain 2>/dev/null"
+            "systemctl list-units --type=service --state=running --no-pager --no-legend --plain 2>/dev/null"
         )
         if r.ok and r.stdout.strip():
             for line in r.stdout.splitlines():
@@ -48,8 +61,7 @@ class ServicesAuditor(BaseAuditor):
     def _collect_enabled_services(self) -> None:
         """Collect boot-enabled services into SystemInfo inventory."""
         r = self._run_command(
-            "systemctl list-unit-files --type=service --state=enabled "
-            "--no-pager --no-legend --plain 2>/dev/null"
+            "systemctl list-unit-files --type=service --state=enabled --no-pager --no-legend --plain 2>/dev/null"
         )
         if r.ok and r.stdout.strip():
             for line in r.stdout.splitlines():
@@ -59,10 +71,7 @@ class ServicesAuditor(BaseAuditor):
 
     def _check_dangerous_services(self) -> None:
         """Flag known-dangerous or legacy services."""
-        all_services = (
-            self.result.system_info.running_services
-            + self.result.system_info.enabled_services
-        )
+        all_services = self.result.system_info.running_services + self.result.system_info.enabled_services
         flagged: set[str] = set()
         for svc in all_services:
             svc_name = svc.replace(".service", "").lower()
@@ -72,13 +81,9 @@ class ServicesAuditor(BaseAuditor):
                     id="SRV-001",
                     title=f"Dangerous service active: {svc_name}",
                     description=(
-                        f"The service '{svc_name}' is known to be insecure or "
-                        f"unnecessary on a hardened server."
+                        f"The service '{svc_name}' is known to be insecure or unnecessary on a hardened server."
                     ),
                     severity=Severity.HIGH,
                     evidence=svc,
-                    recommendation=(
-                        f"Disable and stop this service: "
-                        f"systemctl disable --now {svc_name}"
-                    ),
+                    recommendation=(f"Disable and stop this service: systemctl disable --now {svc_name}"),
                 )

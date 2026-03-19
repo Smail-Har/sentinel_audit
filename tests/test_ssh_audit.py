@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.conftest import FakeExecutor, cmd, make_result
+from conftest import FakeExecutor, cmd, make_result
 
 from sentinel_audit.audit.ssh_audit import SSHAuditor
 from sentinel_audit.core.constants import Severity
@@ -18,12 +18,14 @@ def _make_auditor(sshd_config: str, *, read_ok: bool = True) -> tuple[SSHAuditor
 
 
 def test_ssh_audit_detects_insecure_directives() -> None:
-    insecure_config = "\n".join([
-        "PermitRootLogin yes",       # SSH-001 CRITICAL
-        "PasswordAuthentication yes", # SSH-002 HIGH
-        "X11Forwarding yes",          # SSH-003 MEDIUM
-        "MaxAuthTries 10",            # SSH-004 MEDIUM (max_value: 3)
-    ])
+    insecure_config = "\n".join(
+        [
+            "PermitRootLogin yes",  # SSH-001 CRITICAL
+            "PasswordAuthentication yes",  # SSH-002 HIGH
+            "X11Forwarding yes",  # SSH-003 MEDIUM
+            "MaxAuthTries 10",  # SSH-004 MEDIUM (max_value: 3)
+        ]
+    )
     auditor, _ = _make_auditor(insecure_config)
     auditor.run()
 
@@ -40,13 +42,15 @@ def test_ssh_audit_detects_insecure_directives() -> None:
 
 
 def test_ssh_secure_config_produces_no_findings() -> None:
-    secure_config = "\n".join([
-        "PermitRootLogin no",
-        "PasswordAuthentication no",
-        "PubkeyAuthentication yes",
-        "MaxAuthTries 3",
-        "X11Forwarding no",
-    ])
+    secure_config = "\n".join(
+        [
+            "PermitRootLogin no",
+            "PasswordAuthentication no",
+            "PubkeyAuthentication yes",
+            "MaxAuthTries 3",
+            "X11Forwarding no",
+        ]
+    )
     auditor, _ = _make_auditor(secure_config)
     auditor.run()
 

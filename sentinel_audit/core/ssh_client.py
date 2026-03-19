@@ -14,17 +14,22 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from sentinel_audit.core.constants import DEFAULT_SSH_CONNECT_TIMEOUT
 from sentinel_audit.core.exceptions import (
     AuthenticationError,
-    ConnectionError as SAConnectionError,
     HostKeyVerificationError,
+)
+from sentinel_audit.core.exceptions import (
+    ConnectionError as SAConnectionError,
 )
 from sentinel_audit.core.models import CommandResult
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import paramiko
 
 # Well-known known_hosts locations
 _SYSTEM_KNOWN_HOSTS = "/etc/ssh/ssh_known_hosts"
@@ -50,11 +55,11 @@ class SSHClient:
         host: str,
         username: str = "root",
         port: int = 22,
-        key_path: Optional[str] = None,
-        password: Optional[str] = None,
-        passphrase: Optional[str] = None,
+        key_path: str | None = None,
+        password: str | None = None,
+        passphrase: str | None = None,
         connect_timeout: int = DEFAULT_SSH_CONNECT_TIMEOUT,
-        known_hosts_path: Optional[str] = None,
+        known_hosts_path: str | None = None,
     ) -> None:
         self.host = host
         self.username = username
@@ -64,7 +69,7 @@ class SSHClient:
         self.passphrase = passphrase
         self.connect_timeout = connect_timeout
         self.known_hosts_path = known_hosts_path
-        self._client: Optional[object] = None
+        self._client: paramiko.SSHClient | None = None
 
     # ── connection lifecycle ──────────────────
 
@@ -79,14 +84,11 @@ class SSHClient:
         try:
             import paramiko
         except ImportError as exc:
-            raise SAConnectionError(
-                "paramiko is not installed. Run: pip install paramiko"
-            ) from exc
+            raise SAConnectionError("paramiko is not installed. Run: pip install paramiko") from exc
 
         if self.password:
             logger.warning(
-                "Password authentication is used for %s@%s. "
-                "Key-based auth is strongly recommended.",
+                "Password authentication is used for %s@%s. Key-based auth is strongly recommended.",
                 self.username,
                 self.host,
             )
@@ -101,9 +103,7 @@ class SSHClient:
             try:
                 client.load_host_keys(self.known_hosts_path)
             except (OSError, paramiko.SSHException) as exc:
-                raise HostKeyVerificationError(
-                    f"Cannot load known_hosts from {self.known_hosts_path}: {exc}"
-                ) from exc
+                raise HostKeyVerificationError(f"Cannot load known_hosts from {self.known_hosts_path}: {exc}") from exc
         else:
             # Load system-wide and user known_hosts
             if os.path.isfile(_SYSTEM_KNOWN_HOSTS):
@@ -144,9 +144,7 @@ class SSHClient:
             # Key is encrypted and no passphrase was provided — prompt interactively
             import getpass
 
-            passphrase = getpass.getpass(
-                f"Passphrase for {self.key_path}: "
-            )
+            passphrase = getpass.getpass(f"Passphrase for {self.key_path}: ")
             connect_kwargs["passphrase"] = passphrase
             client.connect(**connect_kwargs)  # type: ignore[arg-type]
             logger.info("SSH connected to %s@%s:%s (passphrase)", self.username, self.host, self.port)
@@ -160,26 +158,20 @@ class SSHClient:
                     f"Add the host key to known_hosts first: "
                     f"ssh-keyscan -p {self.port} {self.host} >> ~/.ssh/known_hosts"
                 ) from exc
-            raise SAConnectionError(
-                f"SSH error connecting to {self.host}:{self.port} — {exc}"
-            ) from exc
+            raise SAConnectionError(f"SSH error connecting to {self.host}:{self.port} — {exc}") from exc
         except paramiko.AuthenticationException as exc:
-            raise AuthenticationError(
-                f"Authentication failed for {self.username}@{self.host}"
-            ) from exc
+            raise AuthenticationError(f"Authentication failed for {self.username}@{self.host}") from exc
         except Exception as exc:
-            raise SAConnectionError(
-                f"Cannot connect to {self.host}:{self.port} — {exc}"
-            ) from exc
+            raise SAConnectionError(f"Cannot connect to {self.host}:{self.port} — {exc}") from exc
 
     def disconnect(self) -> None:
         """Close the SSH session."""
         if self._client:
-            self._client.close()  # type: ignore[union-attr]
+            self._client.close()
             self._client = None
             logger.info("SSH disconnected from %s", self.host)
 
-    def __enter__(self) -> "SSHClient":
+    def __enter__(self) -> SSHClient:
         self.connect()
         return self
 
@@ -197,8 +189,9 @@ class SSHClient:
             raise SAConnectionError("SSH client is not connected. Call connect() first.")
 
         try:
-            _, stdout, stderr = self._client.exec_command(  # type: ignore[union-attr]
-                command, timeout=timeout,
+            _, stdout, stderr = self._client.exec_command(
+                command,
+                timeout=timeout,
             )
             exit_code: int = stdout.channel.recv_exit_status()
             return CommandResult(
@@ -207,7 +200,7 @@ class SSHClient:
                 stderr=stderr.read().decode("utf-8", errors="replace").strip(),
                 return_code=exit_code,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("SSH exec failed [%s]: %s", command, exc)
             return CommandResult(
                 command=command,

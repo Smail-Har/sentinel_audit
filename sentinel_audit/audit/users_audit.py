@@ -15,9 +15,14 @@ from sentinel_audit.core.constants import Severity
 logger = logging.getLogger(__name__)
 
 # Shells that indicate a non-interactive (service) account
-_NOLOGIN_SHELLS = frozenset({
-    "/usr/sbin/nologin", "/bin/false", "/sbin/nologin", "/bin/nologin",
-})
+_NOLOGIN_SHELLS = frozenset(
+    {
+        "/usr/sbin/nologin",
+        "/bin/false",
+        "/sbin/nologin",
+        "/bin/nologin",
+    }
+)
 
 
 class UsersAuditor(BaseAuditor):
@@ -68,10 +73,7 @@ class UsersAuditor(BaseAuditor):
             )
             return
         if r.ok and r.stdout.strip():
-            lines = [
-                ln for ln in r.stdout.splitlines()
-                if "NOPASSWD" in ln and not ln.strip().startswith("#")
-            ]
+            lines = [ln for ln in r.stdout.splitlines() if "NOPASSWD" in ln and not ln.strip().startswith("#")]
             if lines:
                 self._add_finding(
                     id="USR-002",
@@ -83,8 +85,7 @@ class UsersAuditor(BaseAuditor):
                     severity=Severity.HIGH,
                     evidence="\n".join(lines[:5]),
                     recommendation=(
-                        "Remove NOPASSWD from sudoers entries unless strictly "
-                        "required for automated processes."
+                        "Remove NOPASSWD from sudoers entries unless strictly required for automated processes."
                     ),
                 )
 
@@ -130,9 +131,11 @@ class UsersAuditor(BaseAuditor):
             uid = parts[2]
             shell = parts[6]
             is_interactive = shell not in _NOLOGIN_SHELLS
-            self.result.system_info.user_accounts.append({
-                "username": username,
-                "uid": uid,
-                "shell": shell,
-                "interactive": str(is_interactive),
-            })
+            self.result.system_info.user_accounts.append(
+                {
+                    "username": username,
+                    "uid": uid,
+                    "shell": shell,
+                    "interactive": str(is_interactive),
+                }
+            )

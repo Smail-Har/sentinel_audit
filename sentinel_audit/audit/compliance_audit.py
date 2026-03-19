@@ -35,18 +35,13 @@ class ComplianceAuditor(BaseAuditor):
                     self._add_finding(
                         id=rule["id"],
                         title=f"Cannot verify: {rule['title']} — insufficient privileges",
-                        description=(
-                            f"Compliance check skipped due to insufficient privileges: "
-                            f"{rule['title']}"
-                        ),
+                        description=(f"Compliance check skipped due to insufficient privileges: {rule['title']}"),
                         severity=Severity.INFO,
                         evidence=f"Permission denied: {cmd}",
                         recommendation="Re-run audit with elevated privileges.",
                     )
                 else:
-                    self._record_error(
-                        f"Compliance check {rule['id']} command failed: {r.stderr}"
-                    )
+                    self._record_error(f"Compliance check {rule['id']} command failed: {r.stderr}")
                 continue
 
             # Use regex matching (not substring)
@@ -65,6 +60,6 @@ class ComplianceAuditor(BaseAuditor):
             with open(_RULES_PATH, encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
             return data.get("compliance_checks", [])  # type: ignore[no-any-return]
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_error(f"Cannot load compliance checks: {exc}")
             return []

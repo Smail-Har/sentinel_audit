@@ -15,22 +15,22 @@ from typing import Any
 
 from sentinel_audit.core.constants import Severity
 
-
 # Re-export so existing imports keep working
 __all__ = [
-    "Severity",
-    "Finding",
-    "CommandResult",
-    "SystemInfo",
-    "SecurityScore",
     "AuditResult",
+    "CommandResult",
+    "Finding",
     "InventoryTarget",
+    "SecurityScore",
+    "Severity",
+    "SystemInfo",
 ]
 
 
 # ──────────────────────────────────────────────
 # Individual finding
 # ──────────────────────────────────────────────
+
 
 @dataclass
 class Finding:
@@ -80,6 +80,7 @@ class Finding:
 # Command execution result
 # ──────────────────────────────────────────────
 
+
 @dataclass
 class CommandResult:
     """Encapsulates the result of running a shell command."""
@@ -104,6 +105,7 @@ class CommandResult:
 # ──────────────────────────────────────────────
 # System inventory (informational, not scored)
 # ──────────────────────────────────────────────
+
 
 @dataclass
 class SystemInfo:
@@ -159,6 +161,7 @@ class SystemInfo:
 # Security score
 # ──────────────────────────────────────────────
 
+
 @dataclass
 class SecurityScore:
     """Aggregated security score for the target system."""
@@ -184,6 +187,7 @@ class SecurityScore:
 # Top-level audit result
 # ──────────────────────────────────────────────
 
+
 @dataclass
 class AuditResult:
     """Container for the complete result of one audit run."""
@@ -191,7 +195,7 @@ class AuditResult:
     target: str
     label: str = ""
     started_at: datetime.datetime = field(
-        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc),
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
     )
     finished_at: datetime.datetime | None = None
 
@@ -233,6 +237,7 @@ class AuditResult:
 # ──────────────────────────────────────────────
 # Inventory target (from YAML inventory file)
 # ──────────────────────────────────────────────
+
 
 @dataclass
 class InventoryTarget:

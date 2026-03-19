@@ -17,10 +17,12 @@ from sentinel_audit.core.constants import Severity
 _RULES_PATH = Path(__file__).parent.parent / "config" / "default_rules.yaml"
 
 # Sysctl keys where IP forwarding is justified by a VPN
-_VPN_FORWARDING_KEYS: frozenset[str] = frozenset({
-    "net.ipv4.ip_forward",
-    "net.ipv6.conf.all.forwarding",
-})
+_VPN_FORWARDING_KEYS: frozenset[str] = frozenset(
+    {
+        "net.ipv4.ip_forward",
+        "net.ipv6.conf.all.forwarding",
+    }
+)
 
 
 class KernelAuditor(BaseAuditor):
@@ -47,12 +49,9 @@ class KernelAuditor(BaseAuditor):
                     recommendation = rule["recommendation"]
                     if vpn_active and key in _VPN_FORWARDING_KEYS:
                         severity = Severity.INFO
-                        description = (
-                            "IP forwarding enabled — consistent with WireGuard VPN configuration"
-                        )
+                        description = "IP forwarding enabled — consistent with WireGuard VPN configuration"
                         recommendation = (
-                            "No action required — IP forwarding is expected for "
-                            "WireGuard VPN. Verify if intentional."
+                            "No action required — IP forwarding is expected for WireGuard VPN. Verify if intentional."
                         )
 
                     self._add_finding(
@@ -82,11 +81,11 @@ class KernelAuditor(BaseAuditor):
             return True
         return False
 
-    def _load_sysctl_rules(self) -> list[dict[str, object]]:
+    def _load_sysctl_rules(self) -> list[dict[str, str]]:
         try:
             with open(_RULES_PATH, encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
             return data.get("sysctl_rules", [])  # type: ignore[no-any-return]
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_error(f"Cannot load sysctl rules: {exc}")
             return []

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import datetime
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from sentinel_audit.audit.compliance_audit import ComplianceAuditor
 from sentinel_audit.audit.container_audit import ContainerAuditor
@@ -95,7 +95,7 @@ def run_audit(
         try:
             logger.info("Running module: %s", auditor.name)
             auditor.run()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             message = f"[{auditor.name}] Unhandled error: {exc}"
             logger.exception(message)
             result.audit_errors.append(message)
@@ -120,7 +120,7 @@ def generate_reports(
             path = str(output_path / f"{base_name}.json")
             JsonReportGenerator().generate(result, path)
             generated.append(path)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("[report-json] Failed: %s", exc)
             result.audit_errors.append(f"[report-json] {exc}")
 
@@ -129,7 +129,7 @@ def generate_reports(
             path = str(output_path / f"{base_name}.md")
             MarkdownReportGenerator().generate(result, path)
             generated.append(path)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("[report-md] Failed: %s", exc)
             result.audit_errors.append(f"[report-md] {exc}")
 
@@ -138,7 +138,7 @@ def generate_reports(
             path = str(output_path / f"{base_name}.html")
             HtmlReportGenerator().generate(result, path)
             generated.append(path)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("[report-html] Failed: %s", exc)
             result.audit_errors.append(f"[report-html] {exc}")
 
@@ -154,14 +154,14 @@ def generate_reports(
             result.audit_errors.append(
                 "[report-pdf] weasyprint not installed. Install with: pip install 'sentinel-audit[pdf]'"
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("[report-pdf] Failed: %s", exc)
             result.audit_errors.append(f"[report-pdf] {exc}")
 
     if "console" in formats:
         try:
             ConsoleReportGenerator().generate(result)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("[report-console] Failed: %s", exc)
             result.audit_errors.append(f"[report-console] {exc}")
 
@@ -204,7 +204,7 @@ def audit_single_target(
             executor = RemoteExecutor(ssh_client)
 
         run_audit(executor, result, modules)
-        result.finished_at = datetime.datetime.now(datetime.timezone.utc)
+        result.finished_at = datetime.datetime.now(datetime.UTC)
         compute_score(result)
         generate_reports(result, output_dir, formats)
 
@@ -215,7 +215,7 @@ def audit_single_target(
             result.score.grade,
             len(result.findings),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("Audit failed for %s: %s", target.host, exc)
         result.audit_errors.append(f"Fatal error: {exc}")
     finally:

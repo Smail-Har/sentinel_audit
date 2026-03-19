@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.conftest import FakeExecutor, cmd, make_result
+from conftest import FakeExecutor, cmd, make_result
 
 from sentinel_audit.audit.users_audit import UsersAuditor
 from sentinel_audit.core.constants import Severity

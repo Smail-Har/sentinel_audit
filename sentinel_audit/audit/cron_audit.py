@@ -44,10 +44,7 @@ class CronAuditor(BaseAuditor):
             all_jobs.extend(self._extract_jobs(r.stdout))
 
         # User crontabs (may fail for non-root — graceful degradation)
-        r = self._run_command(
-            "for u in $(cut -d: -f1 /etc/passwd); do "
-            "crontab -l -u \"$u\" 2>/dev/null; done"
-        )
+        r = self._run_command('for u in $(cut -d: -f1 /etc/passwd); do crontab -l -u "$u" 2>/dev/null; done')
         if self._is_permission_denied(r):
             # Try at least the current user's crontab
             r = self._run_command("crontab -l 2>/dev/null")
@@ -67,10 +64,7 @@ class CronAuditor(BaseAuditor):
                         description=f"A cron job contains a suspicious pattern: {reason}.",
                         severity=Severity.MEDIUM,
                         evidence=job[:200],
-                        recommendation=(
-                            "Review this cron job and verify it is legitimate. "
-                            "Remove if unauthorized."
-                        ),
+                        recommendation=("Review this cron job and verify it is legitimate. Remove if unauthorized."),
                     )
                     break  # One finding per job, even if multiple patterns match
 
@@ -80,7 +74,12 @@ class CronAuditor(BaseAuditor):
         jobs: list[str] = []
         for line in text.splitlines():
             stripped = line.strip()
-            if stripped and not stripped.startswith("#") and not stripped.startswith("SHELL=") \
-               and not stripped.startswith("PATH=") and not stripped.startswith("MAILTO="):
+            if (
+                stripped
+                and not stripped.startswith("#")
+                and not stripped.startswith("SHELL=")
+                and not stripped.startswith("PATH=")
+                and not stripped.startswith("MAILTO=")
+            ):
                 jobs.append(stripped)
         return jobs

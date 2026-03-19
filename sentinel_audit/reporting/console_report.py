@@ -46,11 +46,16 @@ class ConsoleReportGenerator:
             (" — ", "dim"),
             (score.risk_summary, "italic"),
         )
-        console.print(Panel(header, title=f"[bold]SentinelAudit[/bold] — {result.label or result.target}", border_style="blue"))
+        panel_title = f"[bold]SentinelAudit[/bold] — {result.label or result.target}"
+        console.print(Panel(header, title=panel_title, border_style="blue"))
 
         if not quiet:
             # ── System info ──
-            console.print(f"  [bold]Host:[/bold] {si.hostname}  |  [bold]OS:[/bold] {si.os_name} {si.os_version}  |  [bold]Kernel:[/bold] {si.kernel_version}")
+            console.print(
+                f"  [bold]Host:[/bold] {si.hostname}  |  "
+                f"[bold]OS:[/bold] {si.os_name} {si.os_version}  |  "
+                f"[bold]Kernel:[/bold] {si.kernel_version}"
+            )
             if result.duration_seconds is not None:
                 console.print(f"  [bold]Duration:[/bold] {result.duration_seconds:.1f}s")
             console.print()

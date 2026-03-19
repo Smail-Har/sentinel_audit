@@ -48,7 +48,7 @@ class LocalExecutor(BaseExecutor):
         try:
             proc = subprocess.run(
                 command,
-                shell=True,  # noqa: S602
+                shell=True,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -68,7 +68,7 @@ class LocalExecutor(BaseExecutor):
                 return_code=-1,
                 timed_out=True,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("Command failed: %s — %s", command, exc)
             return CommandResult(
                 command=command,
@@ -102,7 +102,7 @@ class LocalExecutor(BaseExecutor):
                 stderr=f"File not found: {path}",
                 return_code=2,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return CommandResult(
                 command=f"read_file:{path}",
                 stdout="",
@@ -114,7 +114,7 @@ class LocalExecutor(BaseExecutor):
 class RemoteExecutor(BaseExecutor):
     """Execute commands on a remote host via an established SSHClient."""
 
-    def __init__(self, ssh_client: "SSHClient") -> None:
+    def __init__(self, ssh_client: SSHClient) -> None:
         self._ssh = ssh_client
 
     def run(self, command: str, timeout: int = DEFAULT_CMD_TIMEOUT) -> CommandResult:

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from sentinel_audit.core.constants import Severity
 from sentinel_audit.core.models import AuditResult, CommandResult, Finding
 

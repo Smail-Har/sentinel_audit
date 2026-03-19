@@ -16,13 +16,10 @@ class PdfReportGenerator:
 
     def generate(self, result: AuditResult, output_path: str) -> None:
         try:
-            from weasyprint import HTML  # type: ignore[import-untyped]
+            from weasyprint import HTML  # type: ignore[import-not-found]
         except ImportError:
-            msg = (
-                "weasyprint is required for PDF output. "
-                "Install it with: pip install 'sentinel-audit[pdf]'"
-            )
-            raise ImportError(msg)
+            msg = "weasyprint is required for PDF output. Install it with: pip install 'sentinel-audit[pdf]'"
+            raise ImportError(msg) from None
 
         html_content = HtmlReportGenerator().generate(result)
         path = Path(output_path)

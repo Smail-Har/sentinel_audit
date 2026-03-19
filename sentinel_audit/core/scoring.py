@@ -48,15 +48,9 @@ def _build_risk_summary(score: int, breakdown: dict[str, int]) -> str:
     low = breakdown.get(Severity.LOW.value, 0)
 
     if critical > 0:
-        return (
-            f"Critical risk posture: {critical} critical finding(s) "
-            f"require immediate remediation."
-        )
+        return f"Critical risk posture: {critical} critical finding(s) require immediate remediation."
     if high >= 3:
-        return (
-            f"High risk posture: {high} high-severity findings "
-            f"materially increase exposure."
-        )
+        return f"High risk posture: {high} high-severity findings materially increase exposure."
     if high > 0 or medium >= 5:
         return "Elevated risk posture: prioritize high and medium findings."
     if medium > 0 or low >= 5:
@@ -79,7 +73,7 @@ def compute_score(result: AuditResult) -> SecurityScore:
     Returns the computed SecurityScore (also stored as ``result.score``).
     """
     breakdown: dict[str, int] = {s.value: 0 for s in Severity}
-    severity_totals: dict[Severity, float] = {s: 0.0 for s in Severity}
+    severity_totals: dict[Severity, float] = dict.fromkeys(Severity, 0.0)
 
     # Count findings per severity
     for finding in result.findings:
@@ -96,15 +90,16 @@ def compute_score(result: AuditResult) -> SecurityScore:
         total_penalty = 0.0
 
         for i in range(count):
-            penalty = first_pen if i == 0 else subseq_pen
+            penalty: float = first_pen if i == 0 else subseq_pen
             if total_penalty + penalty > cap:
-                penalty = max(0, cap - total_penalty)
+                penalty = max(0.0, cap - total_penalty)
             total_penalty += penalty
 
         severity_totals[severity] = total_penalty
         raw -= total_penalty
 
-    final_score = max(SCORE_FLOOR, min(SCORE_CEILING, int(raw)))
+    clamped = max(SCORE_FLOOR, min(SCORE_CEILING, int(raw)))
+    final_score = int(clamped)
     grade = compute_grade(final_score)
     risk_summary = _build_risk_summary(final_score, breakdown)
 

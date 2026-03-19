@@ -6,13 +6,13 @@ from sentinel_audit.core.utils import (
     detect_os_family,
     is_address_exposed,
     parse_key_value,
-    parse_sshd_config,
     parse_ss_output,
+    parse_sshd_config,
     sanitise_evidence,
 )
 
-
 # ── parse_key_value ──
+
 
 def test_parse_key_value_basic() -> None:
     text = "KEY1=value1\nKEY2=value2\n# comment\n\nKEY3=value with spaces"
@@ -28,6 +28,7 @@ def test_parse_key_value_custom_separator() -> None:
 
 # ── parse_sshd_config ──
 
+
 def test_parse_sshd_config_first_wins() -> None:
     text = "PermitRootLogin no\nPermitRootLogin yes\n# PermitRootLogin maybe"
     result = parse_sshd_config(text)
@@ -41,6 +42,7 @@ def test_parse_sshd_config_skips_comments() -> None:
 
 
 # ── is_address_exposed ──
+
 
 def test_loopback_not_exposed() -> None:
     assert not is_address_exposed("127.0.0.1")
@@ -59,6 +61,7 @@ def test_external_is_exposed() -> None:
 
 # ── detect_os_family ──
 
+
 def test_os_family_detection() -> None:
     assert detect_os_family("ubuntu") == "debian"
     assert detect_os_family("debian") == "debian"
@@ -70,6 +73,7 @@ def test_os_family_detection() -> None:
 
 
 # ── parse_ss_output ──
+
 
 def test_parse_ss_output() -> None:
     output = """Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process
@@ -83,6 +87,7 @@ tcp   LISTEN 0      128    127.0.0.1:3306 0.0.0.0:*    users:(("mysqld",pid=200)
 
 
 # ── sanitise_evidence ──
+
 
 def test_sanitise_strips_password_hash() -> None:
     text = "root:$6$salt$hashedpassword:19000:0:99999:7:::"

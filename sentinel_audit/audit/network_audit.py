@@ -17,9 +17,14 @@ from sentinel_audit.core.constants import Severity
 from sentinel_audit.core.utils import is_address_exposed, parse_ss_output
 
 # Ports that are expected on most servers (not flagged as HIGH)
-_COMMON_PORTS: frozenset[str] = frozenset({
-    "22", "80", "443", "53",
-})
+_COMMON_PORTS: frozenset[str] = frozenset(
+    {
+        "22",
+        "80",
+        "443",
+        "53",
+    }
+)
 
 # Ports that are concerning if externally exposed
 _SENSITIVE_PORTS: dict[str, str] = {
@@ -91,8 +96,7 @@ class NetworkAuditor(BaseAuditor):
                     severity=Severity.HIGH,
                     evidence=f"{addr}:{port} ({entry.get('process', 'unknown')})",
                     recommendation=(
-                        f"Bind {service_name} to 127.0.0.1 or use a firewall "
-                        f"to restrict access to port {port}."
+                        f"Bind {service_name} to 127.0.0.1 or use a firewall to restrict access to port {port}."
                     ),
                 )
             elif port not in _COMMON_PORTS:
@@ -105,9 +109,7 @@ class NetworkAuditor(BaseAuditor):
                     self._add_finding(
                         id="NET-002",
                         title=f"WireGuard VPN port: {port}",
-                        description=(
-                            f"Port {port} is used by WireGuard VPN — expected."
-                        ),
+                        description=(f"Port {port} is used by WireGuard VPN — expected."),
                         severity=Severity.INFO,
                         evidence=f"{addr}:{port} ({entry.get('process', 'unknown')})",
                         recommendation="No action needed — WireGuard VPN port.",

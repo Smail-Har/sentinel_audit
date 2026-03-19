@@ -53,9 +53,7 @@ class FirewallAuditor(BaseAuditor):
 
         # ── Verdict ──────────────────────────────────────────────────
         if active:
-            self.result.system_info.running_services.extend(
-                [f"firewall:{fw}" for fw in active]
-            )
+            self.result.system_info.running_services.extend([f"firewall:{fw}" for fw in active])
         elif privilege_issues:
             # Could not verify because of missing privileges — NOT a CRITICAL
             self._add_finding(
@@ -69,8 +67,7 @@ class FirewallAuditor(BaseAuditor):
                 severity=Severity.INFO,
                 evidence=f"Permission denied for: {', '.join(privilege_issues)}",
                 recommendation=(
-                    "Re-run the audit as root, or grant the audit user "
-                    "passwordless sudo for firewall status commands."
+                    "Re-run the audit as root, or grant the audit user passwordless sudo for firewall status commands."
                 ),
             )
         else:
@@ -104,8 +101,7 @@ class FirewallAuditor(BaseAuditor):
                 severity=Severity.HIGH,
                 evidence=r.stdout.strip(),
                 recommendation=(
-                    "Set the default policy to DROP: iptables -P INPUT DROP, "
-                    "then whitelist required inbound traffic."
+                    "Set the default policy to DROP: iptables -P INPUT DROP, then whitelist required inbound traffic."
                 ),
             )
 
@@ -130,9 +126,7 @@ class FirewallAuditor(BaseAuditor):
 
     def _check_iptables(self) -> tuple[bool, bool]:
         """Return (has_rules, permission_denied)."""
-        r = self._run_command(
-            "iptables -L -n 2>&1 | grep -v '^Chain\\|^target\\|^$' | wc -l"
-        )
+        r = self._run_command("iptables -L -n 2>&1 | grep -v '^Chain\\|^target\\|^$' | wc -l")
         if r.ok:
             try:
                 if int(r.stdout.strip()) > 0:
@@ -141,9 +135,7 @@ class FirewallAuditor(BaseAuditor):
                 pass
             return False, False
         if self._is_permission_denied(r):
-            r2 = self._run_command(
-                "sudo -n iptables -L -n 2>&1 | grep -v '^Chain\\|^target\\|^$' | wc -l"
-            )
+            r2 = self._run_command("sudo -n iptables -L -n 2>&1 | grep -v '^Chain\\|^target\\|^$' | wc -l")
             if r2.ok:
                 try:
                     if int(r2.stdout.strip()) > 0:

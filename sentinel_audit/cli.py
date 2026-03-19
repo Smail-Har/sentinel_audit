@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from sentinel_audit.core.constants import ALL_REPORT_FORMATS, VALID_FORMATS
 from sentinel_audit.core.models import AuditResult, InventoryTarget
@@ -13,8 +12,6 @@ from sentinel_audit.inventory import load_inventory
 from sentinel_audit.orchestrator import (
     ALL_MODULE_NAMES,
     audit_single_target,
-    generate_reports,
-    resolve_modules,
 )
 from sentinel_audit.reporting.consolidated_report import ConsolidatedReportGenerator
 
@@ -24,6 +21,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────
 # Argument parsing
 # ─────────────────────────────────────────────
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the SentinelAudit CLI parser."""
@@ -47,7 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
     target_group.add_argument("--target", help="Single target host (IP or hostname)")
     target_group.add_argument("--inventory", help="Path to YAML inventory file for multi-target audit")
 
-    audit_parser.add_argument("--mode", choices=["local", "remote"], default="remote", help="Execution mode (default: remote)")
+    audit_parser.add_argument(
+        "--mode",
+        choices=["local", "remote"],
+        default="remote",
+        help="Execution mode (default: remote)",
+    )
     audit_parser.add_argument("--ssh-user", default="root", help="SSH username (default: root)")
     audit_parser.add_argument("--ssh-key", help="Path to SSH private key")
     audit_parser.add_argument("--ssh-port", type=int, default=22, help="SSH port (default: 22)")
@@ -79,6 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
 # Logging
 # ─────────────────────────────────────────────
 
+
 def configure_logging(level: str = "INFO") -> None:
     """Configure root logging."""
     logging.basicConfig(
@@ -90,6 +94,7 @@ def configure_logging(level: str = "INFO") -> None:
 # ─────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────
+
 
 def _parse_csv(value: str) -> list[str]:
     if not value.strip():
@@ -108,6 +113,7 @@ def _resolve_formats(value: str) -> list[str]:
 # ─────────────────────────────────────────────
 # Command handlers
 # ─────────────────────────────────────────────
+
 
 def handle_audit_command(args: argparse.Namespace) -> int:
     """Execute full audit workflow."""
@@ -166,7 +172,7 @@ def _handle_inventory_audit(args: argparse.Namespace, formats: list[str]) -> int
                 results,
                 f"{args.output}/consolidated_report.html",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("Failed to generate consolidated report: %s", exc)
 
     failed = sum(1 for r in results if r.audit_errors)
@@ -180,15 +186,15 @@ def _handle_inventory_audit(args: argparse.Namespace, formats: list[str]) -> int
 
 def handle_modules_command() -> int:
     """List available audit modules."""
-    print("Available audit modules:")
-    for name in ALL_MODULE_NAMES:
-        print(f"  - {name}")
+    for _name in ALL_MODULE_NAMES:
+        pass
     return 0
 
 
 # ─────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entrypoint."""

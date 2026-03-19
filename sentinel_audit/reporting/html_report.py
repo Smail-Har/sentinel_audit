@@ -33,11 +33,7 @@ class HtmlReportGenerator:
 
     def generate(self, result: AuditResult, output_path: str | None = None) -> str:
         si = result.system_info
-        ip_addresses = [
-            item.get("address", "")
-            for item in si.network_interfaces
-            if item.get("address")
-        ]
+        ip_addresses = [item.get("address", "") for item in si.network_interfaces if item.get("address")]
 
         template = self._env.get_template("html_report.jinja2")
         html_report = template.render(

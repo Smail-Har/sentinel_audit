@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Text helpers
 # ──────────────────────────────────────────────
 
+
 def parse_key_value(text: str, separator: str = "=") -> dict[str, str]:
     """Parse ``key=value`` lines into a dict.  Comments and blanks are skipped."""
     result: dict[str, str] = {}
@@ -62,6 +63,7 @@ def parse_octal(octal_str: str) -> int:
 # OS detection helpers
 # ──────────────────────────────────────────────
 
+
 def detect_os_family(os_id: str) -> str:
     """Return ``'debian'``, ``'rhel'``, ``'alpine'``, or ``'unknown'``."""
     lower = os_id.lower().strip('"').strip("'")
@@ -77,6 +79,7 @@ def detect_os_family(os_id: str) -> str:
 # ──────────────────────────────────────────────
 # Port / network helpers
 # ──────────────────────────────────────────────
+
 
 def parse_ss_output(output: str) -> list[dict[str, str]]:
     """Parse ``ss -tlnup`` output into structured entries."""
@@ -94,12 +97,14 @@ def parse_ss_output(output: str) -> list[dict[str, str]]:
             addr, port = local.rsplit(":", 1)
         else:
             addr, port = local, ""
-        entries.append({
-            "proto": proto,
-            "local_address": addr,
-            "local_port": port,
-            "process": process,
-        })
+        entries.append(
+            {
+                "proto": proto,
+                "local_address": addr,
+                "local_port": port,
+                "process": process,
+            }
+        )
     return entries
 
 
@@ -113,6 +118,7 @@ def is_address_exposed(address: str) -> bool:
 # ──────────────────────────────────────────────
 # Misc
 # ──────────────────────────────────────────────
+
 
 def truncate(text: str, max_len: int = 500) -> str:
     """Truncate *text* to *max_len* characters."""

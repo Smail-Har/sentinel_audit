@@ -61,7 +61,8 @@ class SSHAuditor(BaseAuditor):
 
             # Check dangerous_values (exact match)
             if "dangerous_values" in rule:
-                if actual.lower() in [v.lower() for v in rule["dangerous_values"]]:
+                dangerous = rule["dangerous_values"]
+                if isinstance(dangerous, list) and actual.lower() in [str(v).lower() for v in dangerous]:
                     self._add_finding(
                         id=rule["id"],
                         title=f"SSH: {directive} set to insecure value",
@@ -74,7 +75,7 @@ class SSHAuditor(BaseAuditor):
             # Check max_value (integer comparison)
             if "max_value" in rule:
                 try:
-                    if int(actual) > rule["max_value"]:
+                    if int(actual) > int(rule["max_value"]):
                         self._add_finding(
                             id=rule["id"],
                             title=f"SSH: {directive} too high ({actual})",
@@ -86,11 +87,11 @@ class SSHAuditor(BaseAuditor):
                 except (ValueError, TypeError):
                     pass
 
-    def _load_ssh_rules(self) -> list[dict[str, object]]:
+    def _load_ssh_rules(self) -> list[dict[str, str]]:
         try:
             with open(_RULES_PATH, encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
             return data.get("ssh_rules", [])  # type: ignore[no-any-return]
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._record_error(f"Cannot load SSH rules: {exc}")
             return []

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.conftest import make_finding, make_result
+from conftest import make_finding, make_result
 
 from sentinel_audit.core.constants import Severity
 from sentinel_audit.core.scoring import compute_score
@@ -25,6 +25,7 @@ def _build_result():
 
 
 # ── base helpers ──
+
 
 def test_collect_recommendations_deduped() -> None:
     result = make_result()
@@ -80,18 +81,26 @@ def test_findings_grouped_by_category() -> None:
 def test_findings_dedup_same_file_same_remediation() -> None:
     """PERM-006 and CIS-5.2.1 point to same file — should be deduped."""
     result = make_result()
-    result.add_finding(make_finding(
-        "PERM-006", "Incorrect permissions on /etc/ssh/sshd_config",
-        Severity.HIGH, "permissions",
-        evidence="/etc/ssh/sshd_config: mode 644 (expected 600)",
-        recommendation="chmod 600 /etc/ssh/sshd_config && chown root:root /etc/ssh/sshd_config",
-    ))
-    result.add_finding(make_finding(
-        "CIS-5.2.1", "Ensure permissions on /etc/ssh/sshd_config are configured",
-        Severity.HIGH, "compliance",
-        evidence="644",
-        recommendation="chmod 600 /etc/ssh/sshd_config",
-    ))
+    result.add_finding(
+        make_finding(
+            "PERM-006",
+            "Incorrect permissions on /etc/ssh/sshd_config",
+            Severity.HIGH,
+            "permissions",
+            evidence="/etc/ssh/sshd_config: mode 644 (expected 600)",
+            recommendation="chmod 600 /etc/ssh/sshd_config && chown root:root /etc/ssh/sshd_config",
+        )
+    )
+    result.add_finding(
+        make_finding(
+            "CIS-5.2.1",
+            "Ensure permissions on /etc/ssh/sshd_config are configured",
+            Severity.HIGH,
+            "compliance",
+            evidence="644",
+            recommendation="chmod 600 /etc/ssh/sshd_config",
+        )
+    )
 
     grouped = findings_grouped_by_category(result)
     total = sum(len(fs) for fs in grouped.values())
@@ -100,6 +109,7 @@ def test_findings_dedup_same_file_same_remediation() -> None:
 
 
 # ── JSON reporter ──
+
 
 def test_json_report_is_valid_json() -> None:
     result = _build_result()
@@ -113,6 +123,7 @@ def test_json_report_is_valid_json() -> None:
 
 
 # ── Markdown reporter ──
+
 
 def test_markdown_report_structure() -> None:
     result = _build_result()

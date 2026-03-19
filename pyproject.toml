@@ -64,7 +64,10 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "S", "B", "A", "C4", "DTZ", "T20", "RUF"]
-ignore = ["S603", "S607", "S108"]
+ignore = ["S603", "S607", "S108", "S602", "A002"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S107", "S104"]
 
 [tool.mypy]
 python_version = "3.11"

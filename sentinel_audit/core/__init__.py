@@ -12,9 +12,9 @@ __all__ = [
     "InventoryTarget",
     "LocalExecutor",
     "RemoteExecutor",
+    "SSHClient",
     "SecurityScore",
     "Severity",
-    "SSHClient",
     "SystemInfo",
     "compute_score",
 ]

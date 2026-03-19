@@ -81,20 +81,20 @@ class SystemInfoAuditor(BaseAuditor):
             for line in r.stdout.splitlines():
                 parts = line.split()
                 if len(parts) >= 5:
-                    info.disk_usage.append({
-                        "mount": parts[0],
-                        "size": parts[1],
-                        "used": parts[2],
-                        "avail": parts[3],
-                        "use_percent": parts[4],
-                    })
+                    info.disk_usage.append(
+                        {
+                            "mount": parts[0],
+                            "size": parts[1],
+                            "used": parts[2],
+                            "avail": parts[3],
+                            "use_percent": parts[4],
+                        }
+                    )
 
         # Network interfaces
         r = self._run_command("hostname -I 2>/dev/null")
         if r.ok and r.stdout.strip():
-            info.network_interfaces = [
-                {"address": ip} for ip in r.stdout.strip().split()
-            ]
+            info.network_interfaces = [{"address": ip} for ip in r.stdout.strip().split()]
 
         self.result.system_info = info
         logger.info("System info collected for %s", info.hostname)

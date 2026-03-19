@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.conftest import FakeExecutor, cmd, make_result
+from conftest import FakeExecutor, cmd, make_result
 
 from sentinel_audit.audit.permissions_audit import PermissionsAuditor
 from sentinel_audit.core.constants import Severity
-
 
 # Mock YAML rules for test isolation
 _TEST_RULES = [
@@ -39,10 +38,12 @@ def _make_auditor(command_map: dict[str, object]) -> PermissionsAuditor:
 
 @patch.object(PermissionsAuditor, "_load_permission_rules", return_value=_TEST_RULES)
 def test_detects_wrong_permissions(mock_rules: object) -> None:
-    auditor = _make_auditor({
-        "stat -c '%a' /etc/passwd": cmd("644"),
-        "stat -c '%a' /etc/shadow": cmd("644"),  # Wrong: should be 640
-    })
+    auditor = _make_auditor(
+        {
+            "stat -c '%a' /etc/passwd": cmd("644"),
+            "stat -c '%a' /etc/shadow": cmd("644"),  # Wrong: should be 640
+        }
+    )
     auditor.run()
 
     ids = {f.id for f in auditor.result.findings}
@@ -56,10 +57,12 @@ def test_detects_wrong_permissions(mock_rules: object) -> None:
 
 @patch.object(PermissionsAuditor, "_load_permission_rules", return_value=_TEST_RULES)
 def test_correct_permissions_no_findings(mock_rules: object) -> None:
-    auditor = _make_auditor({
-        "stat -c '%a' /etc/passwd": cmd("644"),
-        "stat -c '%a' /etc/shadow": cmd("640"),
-    })
+    auditor = _make_auditor(
+        {
+            "stat -c '%a' /etc/passwd": cmd("644"),
+            "stat -c '%a' /etc/shadow": cmd("640"),
+        }
+    )
     auditor.run()
 
     assert len(auditor.result.findings) == 0
@@ -67,10 +70,12 @@ def test_correct_permissions_no_findings(mock_rules: object) -> None:
 
 @patch.object(PermissionsAuditor, "_load_permission_rules", return_value=_TEST_RULES)
 def test_stat_failure_produces_info_finding(mock_rules: object) -> None:
-    auditor = _make_auditor({
-        "stat -c '%a' /etc/passwd": cmd(stderr="permission denied", rc=1),
-        "stat -c '%a' /etc/shadow": cmd("640"),
-    })
+    auditor = _make_auditor(
+        {
+            "stat -c '%a' /etc/passwd": cmd(stderr="permission denied", rc=1),
+            "stat -c '%a' /etc/shadow": cmd("640"),
+        }
+    )
     auditor.run()
 
     noaccess = [f for f in auditor.result.findings if "NOACCESS" in f.id]

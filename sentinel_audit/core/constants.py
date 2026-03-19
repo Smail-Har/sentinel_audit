@@ -6,14 +6,14 @@ Central constants: severity weights, grade thresholds, command whitelist.
 
 from __future__ import annotations
 
-from enum import Enum
-
+from enum import StrEnum
 
 # ──────────────────────────────────────────────
 # Severity weights for scoring
 # ──────────────────────────────────────────────
 
-class Severity(str, Enum):
+
+class Severity(StrEnum):
     """Finding severity levels, ordered from lowest to highest impact."""
 
     INFO = "INFO"
@@ -22,16 +22,16 @@ class Severity(str, Enum):
     HIGH = "HIGH"
     CRITICAL = "CRITICAL"
 
-    def __lt__(self, other: "Severity") -> bool:  # type: ignore[override]
+    def __lt__(self, other: Severity) -> bool:  # type: ignore[override]
         return _SEVERITY_RANK[self.value] < _SEVERITY_RANK[other.value]
 
-    def __le__(self, other: "Severity") -> bool:  # type: ignore[override]
+    def __le__(self, other: Severity) -> bool:  # type: ignore[override]
         return _SEVERITY_RANK[self.value] <= _SEVERITY_RANK[other.value]
 
-    def __gt__(self, other: "Severity") -> bool:  # type: ignore[override]
+    def __gt__(self, other: Severity) -> bool:  # type: ignore[override]
         return _SEVERITY_RANK[self.value] > _SEVERITY_RANK[other.value]
 
-    def __ge__(self, other: "Severity") -> bool:  # type: ignore[override]
+    def __ge__(self, other: Severity) -> bool:  # type: ignore[override]
         return _SEVERITY_RANK[self.value] >= _SEVERITY_RANK[other.value]
 
 
@@ -76,13 +76,27 @@ ALL_REPORT_FORMATS: list[str] = ["json", "md", "html", "console"]
 # OS family detection
 # ──────────────────────────────────────────────
 
-DEBIAN_LIKE: frozenset[str] = frozenset({
-    "debian", "ubuntu", "linuxmint", "pop", "kali", "raspbian",
-})
+DEBIAN_LIKE: frozenset[str] = frozenset(
+    {
+        "debian",
+        "ubuntu",
+        "linuxmint",
+        "pop",
+        "kali",
+        "raspbian",
+    }
+)
 
-RHEL_LIKE: frozenset[str] = frozenset({
-    "rhel", "centos", "rocky", "almalinux", "fedora", "ol",
-})
+RHEL_LIKE: frozenset[str] = frozenset(
+    {
+        "rhel",
+        "centos",
+        "rocky",
+        "almalinux",
+        "fedora",
+        "ol",
+    }
+)
 
 ALPINE_LIKE: frozenset[str] = frozenset({"alpine"})
 
