@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING
+
+import paramiko
 
 from sentinel_audit.core.constants import DEFAULT_SSH_CONNECT_TIMEOUT
 from sentinel_audit.core.exceptions import (
@@ -27,9 +28,6 @@ from sentinel_audit.core.exceptions import (
 from sentinel_audit.core.models import CommandResult
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    import paramiko
 
 # Well-known known_hosts locations
 _SYSTEM_KNOWN_HOSTS = "/etc/ssh/ssh_known_hosts"
@@ -81,11 +79,6 @@ class SSHClient:
             AuthenticationError: If authentication fails.
             ConnectionError: If the TCP connection fails.
         """
-        try:
-            import paramiko
-        except ImportError as exc:
-            raise SAConnectionError("paramiko is not installed. Run: pip install paramiko") from exc
-
         if self.password:
             logger.warning(
                 "Password authentication is used for %s@%s. Key-based auth is strongly recommended.",
@@ -123,18 +116,39 @@ class SSHClient:
             "port": self.port,
             "username": self.username,
             "timeout": self.connect_timeout,
-            "allow_agent": True,
-            "look_for_keys": True,
+            "allow_agent": False,
+            "look_for_keys": False,
         }
 
-        if self.key_path:
+        if self.password:
+            # Priority 1: explicit password
+            connect_kwargs["password"] = self.password
+            logger.info("SSH auth mode: password for %s@%s:%s", self.username, self.host, self.port)
+        elif self.key_path:
+            # Priority 2: explicit key file
             connect_kwargs["key_filename"] = self.key_path
-            connect_kwargs["look_for_keys"] = False
             if self.passphrase:
                 connect_kwargs["passphrase"] = self.passphrase
-        elif self.password:
-            connect_kwargs["password"] = self.password
-            connect_kwargs["look_for_keys"] = False
+            logger.info("SSH auth mode: key file for %s@%s:%s", self.username, self.host, self.port)
+        elif os.environ.get("SSH_AUTH_SOCK"):
+            # Priority 3: SSH agent forwarding
+            agent = paramiko.Agent()
+            agent_keys = agent.get_keys()
+            if not agent_keys:
+                raise AuthenticationError("SSH_AUTH_SOCK is set but agent contains no keys (try: ssh-add -l)")
+            connect_kwargs["allow_agent"] = True
+            logger.info(
+                "SSH auth mode: agent (%d key(s)) for %s@%s:%s",
+                len(agent_keys),
+                self.username,
+                self.host,
+                self.port,
+            )
+        else:
+            raise AuthenticationError(
+                "No SSH authentication method available. "
+                "Provide --ssh-key, --password, or run an SSH agent (ssh-agent + ssh-add)."
+            )
 
         try:
             client.connect(**connect_kwargs)  # type: ignore[arg-type]

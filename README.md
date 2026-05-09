@@ -13,8 +13,12 @@ Conçu pour les consultants en cybersécurité qui présentent des rapports à d
 - **Séparation inventaire/findings** : les services et packages sont collectés en inventaire, pas en findings
 - **5 formats de rapport** : JSON, Markdown, HTML (Jinja2), PDF (weasyprint), console (rich)
 - **Rapport consolidé** : vue multi-serveur en un seul HTML
-- **Sécurité SSH** : `RejectPolicy` (pas d'`AutoAddPolicy`), vérification `known_hosts`
+- **Dégradation gracieuse** : fonctionne sans accès root (fallback `sudo -n`, résultats dégradés en INFO)
+- **Détection WireGuard** : les faux positifs sysctl/réseau liés au VPN sont automatiquement rétrogradés
+- **Sécurité SSH** : `RejectPolicy` (pas d'`AutoAddPolicy`), vérification `known_hosts`, support passphrase
 - **Sanitisation** : les hash de mots de passe et clés privées sont masqués dans les rapports
+- **Déduplication** : les findings portant sur le même fichier sont fusionnés automatiquement
+- **CI/CD** : GitHub Actions (ruff, mypy strict, pytest multi-version)
 
 ## Structure du projet
 
@@ -34,7 +38,21 @@ sentinel_audit/
 │   │   ├── executor.py        # Local/Remote command execution
 │   │   ├── utils.py           # Helpers (parse sshd, sanitise, etc.)
 │   │   └── exceptions.py      # Custom exceptions
-│   ├── audit/                 # 13 audit modules
+│   ├── audit/
+│   │   ├── base.py            # Classe abstraite BaseAuditor
+│   │   ├── ssh_audit.py       # Vérification sshd_config
+│   │   ├── firewall_audit.py  # iptables / nftables / ufw
+│   │   ├── users_audit.py     # UID 0, sudo, mots de passe
+│   │   ├── permissions_audit.py
+│   │   ├── services_audit.py
+│   │   ├── packages_audit.py
+│   │   ├── kernel_audit.py    # Paramètres sysctl
+│   │   ├── cron_audit.py
+│   │   ├── network_audit.py
+│   │   ├── filesystem_audit.py
+│   │   ├── container_audit.py
+│   │   ├── compliance_audit.py # CIS benchmarks
+│   │   └── system_info.py     # Collecte inventaire système
 │   ├── config/
 │   │   └── default_rules.yaml # SSH, sysctl, permissions, compliance rules
 │   ├── reporting/
@@ -48,10 +66,30 @@ sentinel_audit/
 │   └── templates/
 │       ├── html_report.jinja2
 │       └── consolidated_report.jinja2
-├── tests/                     # 75 tests (pytest)
+├── tests/                     # 82 tests (pytest)
+│   ├── conftest.py            # Fixtures partagées (FakeExecutor, etc.)
+│   ├── test_scoring.py
+│   ├── test_ssh_audit.py
+│   ├── test_permissions.py
+│   ├── test_firewall.py
+│   ├── test_users.py
+│   ├── test_services.py
+│   ├── test_network.py
+│   ├── test_cron.py
+│   ├── test_filesystem.py
+│   ├── test_container.py
+│   ├── test_reporting.py
+│   ├── test_inventory.py
+│   ├── test_cli.py
+│   └── test_utils.py
+├── examples/
+│   ├── inventory.yaml         # Exemple inventaire multi-cible
+│   └── sample_audit_report.md
 ├── pyproject.toml
+├── requirements.txt
 ├── Dockerfile
-└── .github/workflows/ci.yml
+├── .github/workflows/ci.yml
+└── LICENSE
 ```
 
 ## Installation
@@ -78,7 +116,11 @@ pip install -e ".[dev]"
 ### Audit d'un serveur unique
 
 ```bash
-# Audit distant via SSH (mode par défaut)
+# Avec agent SSH (recommandé — la clé ne quitte jamais l'agent)
+ssh-add ~/.ssh/id_ed25519
+sentinel-audit audit --target 192.168.1.10 --ssh-user auditor
+
+# Audit distant via SSH avec clé explicite
 sentinel-audit audit --target 192.168.1.10 --ssh-user root --ssh-key ~/.ssh/id_ed25519
 
 # Audit local
@@ -135,6 +177,7 @@ sentinel-audit modules
 | `--include` | Modules à inclure (CSV) |
 | `--exclude` | Modules à exclure (CSV) |
 | `--format` | `json,md,html,pdf,console,all` |
+| `--log-level` | Niveau de log (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
 | `--verbose` | Logs détaillés (DEBUG) |
 
 ## Scoring
@@ -175,10 +218,23 @@ Le score commence à 100 et diminue selon les findings :
 ## Exécution des tests
 
 ```bash
+# Tests unitaires
 python3 -m pytest tests/ -v
+
+# Avec couverture
+python3 -m pytest --cov=sentinel_audit --cov-report=term-missing
 ```
 
-75 tests couvrant : scoring, SSH, permissions, firewall, users, services, network, cron, filesystem, containers, inventaire, reporters, CLI, utilitaires.
+82 tests couvrant : scoring, SSH, permissions, firewall, users, services, network, cron, filesystem, containers, inventaire, reporters, CLI, utilitaires.
+
+## CI/CD
+
+GitHub Actions exécute automatiquement sur chaque push/PR vers `main` :
+
+- **Lint** : `ruff check` (règles E, F, W, I, N, UP, S, B, A, C4, DTZ, T20, RUF)
+- **Format** : `ruff format --check`
+- **Typage** : `mypy --strict` sur tout le package
+- **Tests** : `pytest --cov` sur Python 3.11, 3.12 et 3.13
 
 ## Docker
 
